@@ -128,5 +128,10 @@ $('btn-csv').onclick = () => exportFile('csv');
 $('btn-json').onclick = () => exportFile('json');
 
 // ---- オフライン用 ----
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 新しいバージョンに切り替わったら、一度だけ読み込み直す（更新を反映するため）
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

@@ -11,7 +11,7 @@
 - **iPhone向けPWA**（ホーム画面に追加して使うウェブアプリ）。App Store不要・Node.js不要・無料。
 - 出先でそのまま使える（PC・同じWi-Fi不要）。一度開けばオフラインでも動く。
 - データはスマホ内（IndexedDB）に保存。サーバー不要。
-- 読み取りは ZXing（`vendor/zxing-library.min.js`、Apache-2.0）を使う。iPhoneのSafariには標準のバーコード読み取り機能がないため。
+- 読み取りは ZXing-WASM（`vendor/zxing-reader.js` + `zxing_reader.wasm`、MIT/Apache-2.0）を使う。iPhoneのSafariには標準のバーコード読み取り機能がないため。
 
 ## フェーズ1（今回作る範囲）
 

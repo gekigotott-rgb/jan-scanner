@@ -1,7 +1,7 @@
 // オフライン用：アプリ本体をキャッシュする。ファイルを更新したら VERSION を上げる。
-const VERSION = 'v1';
+const VERSION = 'v2';
 const FILES = ['./', 'index.html', 'style.css', 'db.js', 'price-provider.js', 'scanner.js', 'app.js',
-  'manifest.json', 'vendor/zxing-library.min.js', 'icons/icon-180.png', 'icons/icon-512.png'];
+  'manifest.json', 'vendor/zxing-reader.js', 'vendor/zxing_reader.wasm', 'icons/icon-180.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
