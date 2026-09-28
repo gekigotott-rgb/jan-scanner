@@ -2,19 +2,23 @@ const $ = (id) => document.getElementById(id);
 
 // ---- 通知（音＋フラッシュ。バイブは対応端末のみ） ----
 let audioCtx;
-function beep() {
+function beep(freq = 1200, times = 1) {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.frequency.value = 1200; g.gain.value = 0.15;
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.09);
+    for (let i = 0; i < times; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = freq; g.gain.value = 0.15;
+      o.connect(g); g.connect(audioCtx.destination);
+      const t = audioCtx.currentTime + i * 0.15;
+      o.start(t); o.stop(t + 0.09);
+    }
   } catch (e) {}
 }
-function notify() {
-  beep();
-  if (navigator.vibrate) navigator.vibrate(60);
-  const f = $('flash'); f.classList.add('on');
+// 初めて読んだコード：高い音1回・緑。読んだことがあるコード：低い音2回・橙
+function notify(repeat) {
+  if (repeat) beep(600, 2); else beep(1200, 1);
+  if (navigator.vibrate) navigator.vibrate(repeat ? [60, 60, 60] : 60);
+  const f = $('flash'); f.classList.toggle('repeat', !!repeat); f.classList.add('on');
   setTimeout(() => f.classList.remove('on'), 80);
 }
 
@@ -34,13 +38,24 @@ const fmtTime = (iso) => new Date(iso).toLocaleString('ja-JP', { month: 'numeric
 const yen = (n) => '¥' + Number(n).toLocaleString('ja-JP');
 let scanCount = 0;
 
+function ago(iso) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return '1分以内';
+  if (m < 60) return `${m}分前`;
+  return `${Math.floor(m / 60)}時間${m % 60}分前`;
+}
+
 async function onScanned(jan) {
-  notify();
+  const before = (await DB.all()).filter(r => r.jan === jan); // 新しい順（今回の分を含まない）
+  const repeat = before.length > 0;
+  notify(repeat);
   await DB.add(jan);
   scanCount++;
   $('status').textContent = `読み取り中… 今回 ${scanCount}件`;
-  const past = (await DB.all()).filter(r => r.jan === jan);
-  $('last').innerHTML = `<div class="jan">${jan}</div><div>このコードは${past.length}回目の記録です</div>`;
+  $('last').className = 'last ' + (repeat ? 'repeat' : 'fresh');
+  $('last').innerHTML = `<div class="jan">${jan}</div>` + (repeat
+    ? `<div class="tag">⚠ ${before.length + 1}回目（前回 ${fmtTime(before[0].scanned_at)}・${ago(before[0].scanned_at)}）</div>`
+    : `<div class="tag">新規</div>`);
 }
 
 async function startScan() {
@@ -67,7 +82,10 @@ function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;'
 
 async function renderList() {
   const rows = await DB.all();
-  $('count').textContent = rows.length + '件';
+  const kinds = new Set(rows.map(r => r.jan)).size;
+  const times = {};
+  rows.forEach(r => { times[r.jan] = (times[r.jan] || 0) + 1; });
+  $('count').textContent = `${rows.length}件（${kinds}種類）`;
   $('empty').style.display = rows.length ? 'none' : 'block';
   $('list').innerHTML = rows.map(r => {
     // 同じJANの他の記録と店頭価格が違えば警告
@@ -76,7 +94,7 @@ async function renderList() {
     const alertHtml = diff.length
       ? `<p class="alert">⚠ 過去の店頭価格と違います：${diff.map(o => `${yen(o.store_price)}（${fmtTime(o.scanned_at)}）`).join('、')}</p>` : '';
     return `<li data-id="${r.id}" class="${diff.length ? 'warn' : ''}">
-      <div class="item-head"><span class="jan">${esc(r.jan)}</span><span class="time">${fmtTime(r.scanned_at)}</span></div>
+      <div class="item-head"><span class="jan">${esc(r.jan)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}</span></div>
       ${alertHtml}
       <div class="fields">
         <input type="number" inputmode="numeric" min="0" placeholder="店頭価格(円)" data-f="store_price" value="${r.store_price ?? ''}">
