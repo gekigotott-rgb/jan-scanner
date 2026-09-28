@@ -39,4 +39,5 @@ li.warn { border:1px solid var(--warn); }
 .alert { color:var(--warn); font-size:13px; margin:6px 0 0; }
 .fields { display:grid; grid-template-columns:110px 1fr; gap:8px; margin-top:8px; }
 input { width:100%; font:inherit; font-size:16px; color:var(--fg); background:#000; border:1px solid var(--line); border-radius:8px; padding:8px; }
+label input[type=checkbox] { width:auto; margin-right:6px; vertical-align:middle; }
 .item-foot { text-align:right; margin-top:8px; }

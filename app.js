@@ -42,7 +42,8 @@ function ago(iso) {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (m < 1) return '1分以内';
   if (m < 60) return `${m}分前`;
-  return `${Math.floor(m / 60)}時間${m % 60}分前`;
+  if (m < 60 * 24) return `${Math.floor(m / 60)}時間${m % 60}分前`;
+  return `${Math.floor(m / (60 * 24))}日前`;
 }
 
 async function onScanned(jan) {
@@ -85,7 +86,9 @@ async function renderList() {
   const kinds = new Set(rows.map(r => r.jan)).size;
   const times = {};
   rows.forEach(r => { times[r.jan] = (times[r.jan] || 0) + 1; });
+  const fresh = rows.filter(r => !r.exported_at).length;
   $('count').textContent = `${rows.length}件（${kinds}種類）`;
+  $('unexp').textContent = fresh ? `未書き出し ${fresh}件` : 'すべて書き出し済み';
   $('empty').style.display = rows.length ? 'none' : 'block';
   $('list').innerHTML = rows.map(r => {
     // 同じJANの他の記録と店頭価格が違えば警告
@@ -94,7 +97,7 @@ async function renderList() {
     const alertHtml = diff.length
       ? `<p class="alert">⚠ 過去の店頭価格と違います：${diff.map(o => `${yen(o.store_price)}（${fmtTime(o.scanned_at)}）`).join('、')}</p>` : '';
     return `<li data-id="${r.id}" class="${diff.length ? 'warn' : ''}">
-      <div class="item-head"><span class="jan">${esc(r.jan)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}</span></div>
+      <div class="item-head"><span class="jan">${esc(r.jan)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}${r.exported_at ? ' ・ 書き出し済み' : ''}</span></div>
       ${alertHtml}
       <div class="fields">
         <input type="number" inputmode="numeric" min="0" placeholder="店頭価格(円)" data-f="store_price" value="${r.store_price ?? ''}">
@@ -110,8 +113,9 @@ $('list').addEventListener('change', async (e) => {
   const id = Number(e.target.closest('li').dataset.id);
   const rec = (await DB.all()).find(r => r.id === id); if (!rec) return;
   rec[f] = f === 'store_price' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value;
+  rec.exported_at = null; // 書き出し後に価格やメモを直したら、次の書き出しに入れ直す
   await DB.update(rec);
-  if (f === 'store_price') renderList();
+  renderList();
 });
 $('list').addEventListener('click', async (e) => {
   if (!e.target.dataset.del) return;
@@ -126,9 +130,11 @@ const JST_MS = 9 * 60 * 60 * 1000;
 const toJst = (iso) => new Date(new Date(iso).getTime() + JST_MS).toISOString(); // 見た目がJSTのISO文字列
 
 function buildExport(kind, rows, now = new Date()) {
-  const stamp = toJst(now.toISOString()).slice(0, 10);
+  const j = toJst(now.toISOString());
+  const stamp = j.slice(0, 10) + '_' + j.slice(11, 16).replace(':', ''); // 例: 2026-09-28_1241（同じ日に何度書き出しても名前が重ならない）
   if (kind === 'json') {
-    const data = rows.map(r => ({ ...r, scanned_at: toJst(r.scanned_at).slice(0, 19) + '+09:00' }));
+    const data = rows.map(r => ({ ...r, scanned_at: toJst(r.scanned_at).slice(0, 19) + '+09:00',
+      exported_at: r.exported_at ? toJst(r.exported_at).slice(0, 19) + '+09:00' : null }));
     return { body: JSON.stringify(data, null, 2), type: 'application/json', name: `jan-scan_${stamp}.json` };
   }
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -137,17 +143,28 @@ function buildExport(kind, rows, now = new Date()) {
   return { body, type: 'text/csv', name: `jan-scan_${stamp}.csv` };
 }
 
+// 通常は「未書き出し」の記録だけを書き出す。成功したら書き出し済みの印(exported_at)を付ける。履歴は消さない
 async function exportFile(kind) {
-  const rows = (await DB.all()).reverse();
-  if (!rows.length) return alert('書き出す記録がありません');
+  const all = (await DB.all()).reverse();
+  const includeAll = $('chk-all').checked;
+  const rows = includeAll ? all : all.filter(r => !r.exported_at);
+  if (!all.length) return alert('書き出す記録がありません');
+  if (!rows.length) return alert('新しい記録はありません。すべて書き出し済みです。\n（全件を書き出すときは、下のチェックを入れてください）');
   const { body, type, name } = buildExport(kind, rows);
   const file = new File([body], name, { type });
+  let done = false;
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: name }); done = true; }
+    catch (e) { if (e.name === 'AbortError') return; } // 途中でやめたときは印を付けない
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  if (!done) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  const at = new Date().toISOString();
+  for (const r of rows) if (!r.exported_at) { r.exported_at = at; await DB.update(r); }
+  renderList();
 }
 $('btn-csv').onclick = () => exportFile('csv');
 $('btn-json').onclick = () => exportFile('json');
