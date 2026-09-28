@@ -127,6 +127,16 @@ async function exportFile(kind) {
 $('btn-csv').onclick = () => exportFile('csv');
 $('btn-json').onclick = () => exportFile('json');
 
+// ---- 保存済みの12桁コードを13桁(先頭に0)へ直す（一度直せば何もしない） ----
+(async () => {
+  try {
+    for (const r of await DB.all()) {
+      const n = Scanner.normalize(r.jan);
+      if (n !== r.jan) { r.jan = n; await DB.update(r); }
+    }
+  } catch (e) {}
+})();
+
 // ---- オフライン用 ----
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller;

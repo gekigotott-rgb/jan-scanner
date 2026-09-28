@@ -26,7 +26,13 @@ const Scanner = (() => {
     return (10 - (sum % 10)) % 10 === check;
   }
 
-  function accept(text) {
+  // 12桁(UPC-A)は先頭に0を足して13桁(EAN-13/JAN)に統一する。海外製品(PCパーツ等)対策
+  function normalize(text) {
+    return /^\d{12}$/.test(text) ? '0' + text : text;
+  }
+
+  function accept(raw) {
+    const text = normalize(raw);
     if (!validGtin(text)) return;
     const now = Date.now();
     if (now - (lastSeen.get(text) || 0) < DEBOUNCE_MS) return;
@@ -82,5 +88,5 @@ const Scanner = (() => {
     if (video) video.srcObject = null;
   }
 
-  return { start, stop, validGtin, isRunning: () => running, _decode: (img) => ZXingWASM.readBarcodes(img, { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1 }) };
+  return { start, stop, validGtin, normalize, isRunning: () => running, _decode: (img) => ZXingWASM.readBarcodes(img, { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1 }) };
 })();
