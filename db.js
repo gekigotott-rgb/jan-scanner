@@ -28,7 +28,7 @@ const DB = (() => {
   }
 
   return {
-    add: (jan) => run('readwrite', s => s.add({ jan, scanned_at: new Date().toISOString(), store_price: null, note: '' })),
+    add: (jan, kind = '') => run('readwrite', s => s.add({ jan, kind, scanned_at: new Date().toISOString(), store_price: null, note: '' })),
     update: (rec) => run('readwrite', s => s.put(rec)),
     remove: (id) => run('readwrite', s => s.delete(id)),
     all: async () => (await run('readonly', s => s.getAll())).sort((a, b) => b.id - a.id),

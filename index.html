@@ -16,6 +16,10 @@
 <body>
 <main>
   <section id="view-scan" class="view active">
+    <div class="seg" id="kind-seg">
+      <button data-kind="new" class="on">新品</button>
+      <button data-kind="used">中古</button>
+    </div>
     <div class="video-wrap">
       <video id="video" playsinline muted></video>
       <div class="reticle"></div>
@@ -40,6 +44,11 @@
     <div class="row between">
       <span id="unexp" class="hint"></span>
       <label class="hint"><input type="checkbox" id="chk-all"> 書き出し済みも含めて全件</label>
+    </div>
+    <div class="seg" id="filter-seg">
+      <button data-filter="all" class="on">全て</button>
+      <button data-filter="new">新品</button>
+      <button data-filter="used">中古</button>
     </div>
     <ul id="list"></ul>
     <p id="empty" class="hint">まだ記録がありません。</p>

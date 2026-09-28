@@ -39,5 +39,14 @@ li.warn { border:1px solid var(--warn); }
 .alert { color:var(--warn); font-size:13px; margin:6px 0 0; }
 .fields { display:grid; grid-template-columns:110px 1fr; gap:8px; margin-top:8px; }
 input { width:100%; font:inherit; font-size:16px; color:var(--fg); background:#000; border:1px solid var(--line); border-radius:8px; padding:8px; }
+.seg { display:flex; gap:6px; margin:0 0 10px; }
+.seg button { flex:1; padding:10px 0; }
+.seg button.on { background:var(--accent); border-color:var(--accent); font-weight:600; }
+#kind-seg button.on[data-kind=used] { background:#8e5cf7; border-color:#8e5cf7; }
+.ktag { margin-left:6px; padding:0 6px; border-radius:6px; font-size:11px; background:#2c2c2e; color:var(--sub); letter-spacing:0; vertical-align:middle; }
+.ktag.new { background:#123a66; color:#8ec5ff; }
+.ktag.used { background:#3a2566; color:#c7a8ff; }
+select { font:inherit; font-size:14px; color:var(--fg); background:#000; border:1px solid var(--line); border-radius:8px; padding:6px; }
+.item-foot { display:flex; justify-content:space-between; align-items:center; }
 label input[type=checkbox] { width:auto; margin-right:6px; vertical-align:middle; }
 .item-foot { text-align:right; margin-top:8px; }

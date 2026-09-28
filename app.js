@@ -46,16 +46,31 @@ function ago(iso) {
   return `${Math.floor(m / (60 * 24))}日前`;
 }
 
+// ---- 新品 / 中古 ----
+const KIND_LABEL = { new: '新品', used: '中古' };
+let currentKind = 'new';
+try { const k = localStorage.getItem('kind'); if (KIND_LABEL[k]) currentKind = k; } catch (e) {}
+function syncKindSeg() {
+  document.querySelectorAll('#kind-seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === currentKind));
+}
+$('kind-seg').addEventListener('click', (e) => {
+  const k = e.target.dataset.kind; if (!k) return;
+  currentKind = k; syncKindSeg();
+  try { localStorage.setItem('kind', k); } catch (e2) {}
+});
+syncKindSeg();
+const kindTag = (k) => (KIND_LABEL[k] ? `<span class="ktag ${k}">${KIND_LABEL[k]}</span>` : '');
+
 async function onScanned(jan) {
   const before = (await DB.all()).filter(r => r.jan === jan); // 新しい順（今回の分を含まない）
   const repeat = before.length > 0;
   notify(repeat);
-  await DB.add(jan);
+  await DB.add(jan, currentKind);
   scanCount++;
-  $('status').textContent = `読み取り中… 今回 ${scanCount}件`;
+  $('status').textContent = `読み取り中… 今回 ${scanCount}件（${KIND_LABEL[currentKind]}）`;
   $('last').className = 'last ' + (repeat ? 'repeat' : 'fresh');
-  $('last').innerHTML = `<div class="jan">${jan}</div>` + (repeat
-    ? `<div class="tag">⚠ ${before.length + 1}回目（前回 ${fmtTime(before[0].scanned_at)}・${ago(before[0].scanned_at)}）</div>`
+  $('last').innerHTML = `<div class="jan">${jan}${kindTag(currentKind)}</div>` + (repeat
+    ? `<div class="tag">⚠ ${before.length + 1}回目（前回 ${KIND_LABEL[before[0].kind] ? KIND_LABEL[before[0].kind] + ' ' : ''}${fmtTime(before[0].scanned_at)}・${ago(before[0].scanned_at)}）</div>`
     : `<div class="tag">新規</div>`);
 }
 
@@ -81,29 +96,45 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && Sca
 // ---- 一覧 ----
 function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+let listFilter = 'all';
+$('filter-seg').addEventListener('click', (e) => {
+  const f = e.target.dataset.filter; if (!f) return;
+  listFilter = f;
+  document.querySelectorAll('#filter-seg button').forEach(b => b.classList.toggle('on', b.dataset.filter === f));
+  renderList();
+});
+
 async function renderList() {
-  const rows = await DB.all();
+  const allRows = await DB.all();
+  const rows = listFilter === 'all' ? allRows : allRows.filter(r => r.kind === listFilter);
   const kinds = new Set(rows.map(r => r.jan)).size;
   const times = {};
-  rows.forEach(r => { times[r.jan] = (times[r.jan] || 0) + 1; });
-  const fresh = rows.filter(r => !r.exported_at).length;
+  allRows.forEach(r => { times[r.jan] = (times[r.jan] || 0) + 1; }); // ×N は新品・中古をまたいだ回数
+  const fresh = allRows.filter(r => !r.exported_at).length;
   $('count').textContent = `${rows.length}件（${kinds}種類）`;
   $('unexp').textContent = fresh ? `未書き出し ${fresh}件` : 'すべて書き出し済み';
   $('empty').style.display = rows.length ? 'none' : 'block';
   $('list').innerHTML = rows.map(r => {
-    // 同じJANの他の記録と店頭価格が違えば警告
+    // 同じJANで、同じ種別（新品どうし・中古どうし）の他の記録と店頭価格が違えば警告
     const diff = r.store_price == null ? [] :
-      rows.filter(o => o.jan === r.jan && o.id !== r.id && o.store_price != null && o.store_price !== r.store_price);
+      allRows.filter(o => o.jan === r.jan && o.id !== r.id && (o.kind || '') === (r.kind || '') && o.store_price != null && o.store_price !== r.store_price);
     const alertHtml = diff.length
       ? `<p class="alert">⚠ 過去の店頭価格と違います：${diff.map(o => `${yen(o.store_price)}（${fmtTime(o.scanned_at)}）`).join('、')}</p>` : '';
     return `<li data-id="${r.id}" class="${diff.length ? 'warn' : ''}">
-      <div class="item-head"><span class="jan">${esc(r.jan)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}${r.exported_at ? ' ・ 書き出し済み' : ''}</span></div>
+      <div class="item-head"><span class="jan">${esc(r.jan)}${kindTag(r.kind)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}${r.exported_at ? ' ・ 書き出し済み' : ''}</span></div>
       ${alertHtml}
       <div class="fields">
         <input type="number" inputmode="numeric" min="0" placeholder="店頭価格(円)" data-f="store_price" value="${r.store_price ?? ''}">
         <input type="text" placeholder="メモ" data-f="note" value="${esc(r.note)}">
       </div>
-      <div class="item-foot"><button class="danger" data-del="1">削除</button></div>
+      <div class="item-foot">
+        <select data-f="kind">
+          <option value=""${r.kind ? '' : ' selected'}>種別なし</option>
+          <option value="new"${r.kind === 'new' ? ' selected' : ''}>新品</option>
+          <option value="used"${r.kind === 'used' ? ' selected' : ''}>中古</option>
+        </select>
+        <button class="danger" data-del="1">削除</button>
+      </div>
     </li>`;
   }).join('');
 }
@@ -138,8 +169,9 @@ function buildExport(kind, rows, now = new Date()) {
     return { body: JSON.stringify(data, null, 2), type: 'application/json', name: `jan-scan_${stamp}.json` };
   }
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note',
-    ...rows.map(r => [r.id, q(r.jan), toJst(r.scanned_at).slice(0, 19).replace('T', ' '), r.store_price ?? '', q(r.note)].join(','))].join('\r\n');
+  // kind 列は末尾に追加（既存の列の並びは変えない）
+  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note,kind',
+    ...rows.map(r => [r.id, q(r.jan), toJst(r.scanned_at).slice(0, 19).replace('T', ' '), r.store_price ?? '', q(r.note), KIND_LABEL[r.kind] || ''].join(','))].join('\r\n');
   return { body, type: 'text/csv', name: `jan-scan_${stamp}.csv` };
 }
 
