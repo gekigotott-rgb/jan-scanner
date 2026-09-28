@@ -5,9 +5,9 @@ html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
 main { padding:env(safe-area-inset-top) 16px 80px; }
 .view { display:none; padding-top:12px; }
 .view.active { display:block; }
-.video-wrap { position:relative; width:100%; aspect-ratio:4/3; background:#000; border-radius:12px; overflow:hidden; }
+.video-wrap { position:relative; width:100%; aspect-ratio:1/1; background:#000; border-radius:12px; overflow:hidden; }
 video { width:100%; height:100%; object-fit:cover; }
-.reticle { position:absolute; inset:25% 10%; border:2px solid rgba(255,255,255,.7); border-radius:8px; pointer-events:none; }
+.reticle { position:absolute; inset:15% 8%; border:2px solid rgba(255,255,255,.7); border-radius:8px; pointer-events:none; }
 #flash { position:absolute; inset:0; background:var(--ok); opacity:0; pointer-events:none; transition:opacity .4s; }
 #flash.on { opacity:.45; transition:none; }
 #status { margin:10px 0 4px; color:var(--sub); font-size:14px; }

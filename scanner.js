@@ -2,7 +2,7 @@
 const Scanner = (() => {
   const DEBOUNCE_MS = 3000;   // 同じコードを再登録しない時間
   const CONFIRM_MS = 1500;    // 同じ結果を連続2回読めたときだけ採用（誤読対策）
-  const MAX_WIDTH = 1600;     // 解析に使う横幅（大きいほど遠くのコードを読めるが重くなる）
+  const MAX_SIZE = 1600;      // 解析画像の長辺（大きいほど遠くのコードを読めるが重くなる）
   const FORMATS = ['EAN-13', 'EAN-8', 'UPC-A'];
 
   ZXingWASM.setZXingModuleOverrides({
@@ -43,13 +43,13 @@ const Scanner = (() => {
     while (running) {
       const t0 = performance.now();
       if (video.readyState >= 2 && video.videoWidth) {
-        // 画面中央の横帯だけを解析する（速い）
+        // 映像全体を解析する。iPhoneでは元映像の向きと画面表示の向きがずれることがあり、
+        // 範囲を絞ると横向きバーコードが切れて読めなくなるため（向きは tryRotate で吸収）
         const vw = video.videoWidth, vh = video.videoHeight;
-        const sh = Math.round(vh * 0.55), sy = Math.round((vh - sh) / 2);
-        const scale = Math.min(1, MAX_WIDTH / vw);
+        const scale = Math.min(1, MAX_SIZE / Math.max(vw, vh));
         canvas.width = Math.round(vw * scale);
-        canvas.height = Math.round(sh * scale);
-        ctx.drawImage(video, 0, sy, vw, sh, 0, 0, canvas.width, canvas.height);
+        canvas.height = Math.round(vh * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         try {
           const res = await ZXingWASM.readBarcodes(
             ctx.getImageData(0, 0, canvas.width, canvas.height),
