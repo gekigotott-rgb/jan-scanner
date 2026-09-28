@@ -103,19 +103,26 @@ $('list').addEventListener('click', async (e) => {
 });
 
 // ---- 書き出し（共有シート。使えなければダウンロード） ----
+// 書き出しは日本時間(JST, UTC+9)。端末内の保存値はUTCのまま
+const JST_MS = 9 * 60 * 60 * 1000;
+const toJst = (iso) => new Date(new Date(iso).getTime() + JST_MS).toISOString(); // 見た目がJSTのISO文字列
+
+function buildExport(kind, rows, now = new Date()) {
+  const stamp = toJst(now.toISOString()).slice(0, 10);
+  if (kind === 'json') {
+    const data = rows.map(r => ({ ...r, scanned_at: toJst(r.scanned_at).slice(0, 19) + '+09:00' }));
+    return { body: JSON.stringify(data, null, 2), type: 'application/json', name: `jan-scan_${stamp}.json` };
+  }
+  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note',
+    ...rows.map(r => [r.id, q(r.jan), toJst(r.scanned_at).slice(0, 19).replace('T', ' '), r.store_price ?? '', q(r.note)].join(','))].join('\r\n');
+  return { body, type: 'text/csv', name: `jan-scan_${stamp}.csv` };
+}
+
 async function exportFile(kind) {
   const rows = (await DB.all()).reverse();
   if (!rows.length) return alert('書き出す記録がありません');
-  const stamp = new Date().toISOString().slice(0, 10);
-  let body, type, name;
-  if (kind === 'json') {
-    body = JSON.stringify(rows, null, 2); type = 'application/json'; name = `jan-scan_${stamp}.json`;
-  } else {
-    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    body = '﻿' + ['id,jan,scanned_at,store_price,note',
-      ...rows.map(r => [r.id, q(r.jan), r.scanned_at, r.store_price ?? '', q(r.note)].join(','))].join('\r\n');
-    type = 'text/csv'; name = `jan-scan_${stamp}.csv`;
-  }
+  const { body, type, name } = buildExport(kind, rows);
   const file = new File([body], name, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
