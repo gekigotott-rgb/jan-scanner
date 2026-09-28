@@ -4,13 +4,14 @@ const Scanner = (() => {
   const CONFIRM_MS = 1500;    // 同じ結果を連続2回読めたときだけ採用（誤読対策）
   const MAX_SIZE = 1600;      // 解析画像の長辺（大きいほど遠くのコードを読めるが重くなる）
   const FORMATS = ['EAN-13', 'EAN-8', 'UPC-A'];
+  const MAX_SYMBOLS = 2;      // 1フレームで読む最大数（書籍は上下2段のバーコード）
 
   ZXingWASM.setZXingModuleOverrides({
     locateFile: (path, prefix) => (path.endsWith('.wasm') ? 'vendor/zxing_reader.wasm' : prefix + path),
   });
 
   let running = false, stream = null, video = null, onCode = null;
-  let pending = null; // { code, at }
+  let pending = new Map(); // code -> 1回目に読んだ時刻
   const lastSeen = new Map(); // jan -> 最後に受け付けた時刻
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -36,11 +37,12 @@ const Scanner = (() => {
     if (!validGtin(text)) return;
     const now = Date.now();
     if (now - (lastSeen.get(text) || 0) < DEBOUNCE_MS) return;
-    if (!pending || pending.code !== text || now - pending.at > CONFIRM_MS) {
-      pending = { code: text, at: now }; // 1回目：確認待ち
+    const first = pending.get(text);
+    if (first === undefined || now - first > CONFIRM_MS) {
+      pending.set(text, now); // 1回目：確認待ち（コードごとに管理。書籍の2段バーコードを同時に読める）
       return;
     }
-    pending = null;
+    pending.delete(text);
     lastSeen.set(text, now);
     onCode && onCode(text);
   }
@@ -59,8 +61,8 @@ const Scanner = (() => {
         try {
           const res = await ZXingWASM.readBarcodes(
             ctx.getImageData(0, 0, canvas.width, canvas.height),
-            { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1 });
-          if (res.length && res[0].isValid !== false) accept(res[0].text);
+            { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: MAX_SYMBOLS });
+          for (const r of res) if (r.isValid !== false) accept(r.text);
         } catch (e) { /* 1フレームの失敗は無視 */ }
       }
       const wait = Math.max(0, 60 - (performance.now() - t0));
@@ -70,7 +72,7 @@ const Scanner = (() => {
 
   async function start(videoEl, callback) {
     if (running) return;
-    video = videoEl; onCode = callback; pending = null;
+    video = videoEl; onCode = callback; pending = new Map();
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false,
@@ -88,5 +90,5 @@ const Scanner = (() => {
     if (video) video.srcObject = null;
   }
 
-  return { start, stop, validGtin, normalize, isRunning: () => running, _decode: (img) => ZXingWASM.readBarcodes(img, { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1 }) };
+  return { start, stop, validGtin, normalize, isRunning: () => running, _decode: (img) => ZXingWASM.readBarcodes(img, { formats: FORMATS, tryHarder: true, tryRotate: true, maxNumberOfSymbols: MAX_SYMBOLS }) };
 })();
