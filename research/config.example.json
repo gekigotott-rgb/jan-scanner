@@ -1,0 +1,11 @@
+{
+  "provider": "keepa",
+  "settings": {
+    "useFba": true,
+    "shippingPerItem": 0,
+    "otherCostPerItem": 0,
+    "minProfit": 300,
+    "minRoi": 0.15,
+    "minReferralFee": 30
+  }
+}
