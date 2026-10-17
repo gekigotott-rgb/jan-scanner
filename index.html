@@ -45,6 +45,7 @@
       <span id="unexp" class="hint"></span>
       <label class="hint"><input type="checkbox" id="chk-all"> 書き出し済みも含めて全件</label>
     </div>
+    <button id="btn-fetch" class="wide" style="display:none"></button>
     <div class="seg" id="filter-seg">
       <button data-filter="all" class="on">全て</button>
       <button data-filter="new">新品</button>
@@ -53,11 +54,39 @@
     <ul id="list"></ul>
     <p id="empty" class="hint">まだ記録がありません。</p>
   </section>
+
+  <section id="view-settings" class="view">
+    <h2>Amazonの価格</h2>
+    <p class="hint">読み取った直後に、Amazonの価格と「この値段以下なら仕入れてよい」上限を表示します。</p>
+    <div class="seg" id="prov-seg">
+      <button data-p="off">使わない</button>
+      <button data-p="keepa">Keepa</button>
+      <button data-p="spapi">SP-API</button>
+      <button data-p="mock">お試し</button>
+    </div>
+    <p class="hint">「お試し」は架空の数字です。サーバーなしで画面の動きを確かめられます。</p>
+    <div id="server-fields">
+      <label class="field">サーバーのURL<input id="set-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://jan-scanner-api.○○.workers.dev"></label>
+      <label class="field">合言葉<input id="set-code" type="password" autocomplete="off"></label>
+    </div>
+    <div class="row"><button id="btn-test">つながるか試す</button><span id="test-result" class="hint"></span></div>
+
+    <h2>仕入れ判定の基準</h2>
+    <label class="check"><input type="checkbox" id="set-fba"> FBAで売る（FBA手数料を引く）</label>
+    <div class="grid2">
+      <label class="field">最低の利益（円）<input id="set-profit" type="number" inputmode="numeric" min="0"></label>
+      <label class="field">最低のROI（%）<input id="set-roi" type="number" inputmode="numeric" min="0"></label>
+      <label class="field">送料（1個・円）<input id="set-ship" type="number" inputmode="numeric" min="0"></label>
+      <label class="field">その他経費（1個・円）<input id="set-other" type="number" inputmode="numeric" min="0"></label>
+    </div>
+    <p class="hint">◎＝利益とROIの両方が基準以上。価格は調べた時点のものなので、仕入れる前にAmazonのページでも確かめてください。</p>
+  </section>
 </main>
 
 <nav>
   <button id="tab-scan" class="tab active">スキャン</button>
   <button id="tab-list" class="tab">一覧</button>
+  <button id="tab-settings" class="tab">設定</button>
 </nav>
 
 <script src="vendor/zxing-reader.js"></script>
