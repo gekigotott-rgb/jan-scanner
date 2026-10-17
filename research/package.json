@@ -1,0 +1,11 @@
+{
+  "name": "jan-scanner-research",
+  "private": true,
+  "description": "スキャナーアプリの書き出しJSONから、Amazonの価格と利益を調べる（フェーズA）",
+  "type": "module",
+  "engines": { "node": ">=20.12" },
+  "scripts": {
+    "research": "node src/cli/main.js",
+    "test": "node --test"
+  }
+}
