@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeJan } from '../src/core/jan.js';
-import { calcProfit, judge } from '../src/core/profit.js';
+import { calcProfit, judge, maxPurchasePrice } from '../src/core/profit.js';
 import { research } from '../src/core/research.js';
 import { parseKeepaProducts, createKeepaProvider } from '../src/core/providers/keepa.js';
 import { parseCatalog, parseOffers, parseFees, createSpApiProvider } from '../src/core/providers/spapi.js';
@@ -132,4 +132,37 @@ test('research → CSV：同じJANは1回だけ問い合わせ、良い順に並
   assert.match(lines[1], /^◎,="4901234567894",/);
   assert.match(lines[2], /^\?,="abc",/);
   assert.match(lines[3], /^×,/);
+});
+
+test('maxPurchasePrice: 利益300円とROI15%の両方を満たす仕入れ値の上限', () => {
+  const i = info({ buyBoxPrice: 2000, referralFeeRate: 0.1, fbaFee: 300 }); // 手数料を引いた残り 1500
+  assert.equal(maxPurchasePrice('', i), 1200); // 1500-300=1200、1500/1.15=1304 → 低いほう
+  assert.equal(judge(calcProfit({ purchasePrice: 1200 }, i)), '◎');
+  assert.equal(judge(calcProfit({ purchasePrice: 1201 }, i)), '△');
+  const cheap = info({ buyBoxPrice: 2000, referralFeeRate: 0.1, fbaFee: 300 });
+  assert.equal(maxPurchasePrice('', cheap, { minProfit: 100 }), 1304); // ROI のほうが厳しい
+  assert.ok(maxPurchasePrice('', info({ buyBoxPrice: 400, referralFeeRate: 0.1, fbaFee: 318 })) <= 0); // 何円でも ◎ にならない
+  assert.equal(maxPurchasePrice('used', i), null); // 中古の価格がない
+  assert.equal(maxPurchasePrice('', emptyInfo('4901234567894', 'test')), null);
+});
+
+test('spapi provider: 中古の記録があるJANは中古の価格も調べ、手数料率で中古の利益を出す', async () => {
+  const calls = [];
+  const reply = (body) => ({ ok: true, status: 200, json: async () => body });
+  const fetch = async (url, init = {}) => {
+    calls.push(`${init.method || 'GET'} ${new URL(url).pathname} ${new URL(url).searchParams.get('ItemCondition') || ''}`.trim());
+    if (url.includes('/auth/o2/token')) return reply({ access_token: 't', expires_in: 3600 });
+    if (url.includes('/catalog/')) return reply({ items: [{ asin: 'B0X', summaries: [{ itemName: '名前' }] }] });
+    if (url.includes('ItemCondition=Used')) return reply({ payload: { Summary: { LowestPrices: [{ condition: 'used', LandedPrice: { Amount: 1500 } }] } } });
+    if (url.includes('/offers')) return reply({ payload: { Summary: { BuyBoxPrices: [{ condition: 'New', LandedPrice: { Amount: 2000 } }] } } });
+    return reply({ payload: { FeesEstimateResult: { FeesEstimate: { TotalFeesEstimate: { Amount: 500 }, FeeDetailList: [{ FeeType: 'ReferralFee', FinalFee: { Amount: 200 } }] } } } });
+  };
+  const p = createSpApiProvider({ clientId: 'a', clientSecret: 'b', refreshToken: 'c', fetch, minInterval: { catalog: 0, offers: 0, fees: 0 } });
+  const [row] = await research([{ jan: '4901234567894', purchasePrice: 500, kind: 'used' }], p);
+  assert.ok(calls.includes('GET /products/pricing/v0/items/B0X/offers Used'));
+  assert.deepEqual([row.info.usedPrice, row.info.referralFeeRate, row.calc.sellPrice, row.calc.referralFee, row.calc.profit], [1500, 0.1, 1500, 150, 550]);
+  assert.equal(row.verdict, '◎');
+  calls.length = 0;
+  await p.lookup(['4901234567894']); // 新品だけなら中古は調べない
+  assert.ok(!calls.some((c) => c.endsWith('Used')));
 });

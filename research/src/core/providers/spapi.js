@@ -2,7 +2,7 @@
 // 必要なもの：大口出品の契約と、開発者登録で発行される client id / client secret / refresh token。
 // 2023年10月以降、AWS署名は不要になったため、アクセストークンだけで呼べる。
 //
-// 1件につき3回呼ぶ（商品検索 → 出品価格 → 手数料見積もり）。
+// 1件につき3回呼ぶ（商品検索 → 出品価格 → 手数料見積もり）。中古の記録があるJANは、中古の出品価格も呼ぶ（4回）。
 // 出品価格の API は 0.5回/秒までなので、100件で3〜4分かかる。
 
 import { emptyInfo } from './info.js';
@@ -93,7 +93,7 @@ export function createSpApiProvider({
     }
   }
 
-  async function lookupOne(jan) {
+  async function lookupOne(jan, withUsed) {
     const q = new URLSearchParams({ identifiers: jan, identifiersType: 'JAN', marketplaceIds: marketplaceId, includedData: 'summaries,salesRanks' });
     const catalog = parseCatalog(await call('catalog', `/catalog/2022-04-01/items?${q}`));
     if (!catalog) return emptyInfo(jan, 'spapi', 'Amazonに商品が見つかりません');
@@ -101,6 +101,11 @@ export function createSpApiProvider({
     const info = { ...emptyInfo(jan, 'spapi'), found: true, ...catalog };
     const oq = new URLSearchParams({ MarketplaceId: marketplaceId, ItemCondition: 'New', CustomerType: 'Consumer' });
     Object.assign(info, parseOffers(await call('offers', `/products/pricing/v0/items/${catalog.asin}/offers?${oq}`)));
+    if (withUsed) {
+      oq.set('ItemCondition', 'Used');
+      const used = parseOffers(await call('offers', `/products/pricing/v0/items/${catalog.asin}/offers?${oq}`));
+      info.usedPrice = used.usedPrice ?? info.usedPrice;
+    }
 
     const basePrice = info.buyBoxPrice ?? info.newPrice;
     if (basePrice != null) {
@@ -115,17 +120,19 @@ export function createSpApiProvider({
           },
         }),
       }));
-      if (fees) Object.assign(info, fees, { feeBasePrice: basePrice });
+      // 手数料率も残す。中古の値段で売るときは、この率で販売手数料を計算する（profit.js）
+      if (fees) Object.assign(info, fees, { feeBasePrice: basePrice, referralFeeRate: Math.round((fees.referralFee / basePrice) * 10000) / 10000 });
     }
     return info;
   }
 
   return {
     name: 'spapi',
-    async lookup(jans) {
+    /** options.used: 中古の価格も調べる JAN の集まり（Set） */
+    async lookup(jans, options = {}) {
       const result = new Map();
       for (const jan of jans) {
-        try { result.set(jan, await lookupOne(jan)); }
+        try { result.set(jan, await lookupOne(jan, !!options.used?.has(jan))); }
         catch (e) { result.set(jan, emptyInfo(jan, 'spapi', e.message)); }
       }
       return result;

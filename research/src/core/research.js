@@ -33,7 +33,8 @@ export function createProvider(name, env = {}, options = {}) {
  */
 export async function research(records, provider, settings = {}) {
   const jans = [...new Set(records.map((r) => normalizeJan(r.jan)).filter(Boolean))];
-  const infos = jans.length ? await provider.lookup(jans) : new Map();
+  const used = new Set(records.filter((r) => r.kind === 'used').map((r) => normalizeJan(r.jan)).filter(Boolean));
+  const infos = jans.length ? await provider.lookup(jans, { used }) : new Map();
   return records.map((record) => {
     const jan = normalizeJan(record.jan);
     const info = jan ? infos.get(jan) ?? emptyInfo(jan, provider.name, '結果がありません') : emptyInfo(record.jan, provider.name, 'JANコードが正しくありません');

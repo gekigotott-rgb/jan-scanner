@@ -121,7 +121,7 @@ ROI  = 利益 ÷ 仕入れ値
 - JAN の桁数やチェックデジットがおかしい（「JANコードが正しくありません」）
 - Amazon に商品ページがない、または出品がなく価格が分からない
 - Keepa で FBA手数料が分からない商品（`useFba` を false にすれば FBA手数料なしで計算される）
-- **SP-API で「中古」の記録を調べたとき**（下の表を参照）
+- 中古の記録で、Amazon に中古の出品がないとき
 
 ### 設定（config.json の settings）
 
@@ -141,10 +141,8 @@ ROI  = 利益 ÷ 仕入れ値
 | 契約 | Keepa の有料APIプラン | Amazon の大口出品＋開発者登録 |
 | 売れ行き（30日の販売数の目安） | ◎ 分かる | ✕ 今のランキングだけ |
 | 手数料 | 率から計算（目安） | Amazon が見積もった金額（正確） |
-| 速さ | 100件まとめて1回 | 1件ずつ。100件で3〜4分 |
-| 中古の判定 | できる（中古最安と手数料率から計算） | できない（新品の価格しか取らないため「?」になる） |
-
-中古の記録が多いときは Keepa を使う。
+| 速さ | 100件まとめて1回 | 1件ずつ。100件で3〜4分（中古の記録があるJANは中古の価格も調べるので少し長い） |
+| 中古の判定 | できる（中古最安と手数料率から計算） | できる（中古最安と、新品の見積もりから出した手数料率で計算） |
 
 ## 困ったとき
 
@@ -176,46 +174,32 @@ ROI  = 利益 ÷ 仕入れ値
 | `found` | Amazon に商品があったか | ○ | ○ |
 | `asin` / `title` | ASIN と商品名 | ○ | ○ |
 | `buyBoxPrice` | カート価格（新品） | ○ | ○ |
-| `newPrice` / `usedPrice` | 新品・中古の最安値 | ○ / ○ | ○ / ✕ |
+| `newPrice` / `usedPrice` | 新品・中古の最安値 | ○ / ○ | ○ / ○（中古の記録があるときだけ） |
 | `amazonPrice` | Amazon本体の価格 | ○ | ✕ |
 | `salesRank` | 売れ筋ランキング | ○ | ○ |
 | `rankDrops30` | 30日間にランキングが上がった回数 | ○ | ✕ |
 | `referralFee` / `feeBasePrice` | 販売手数料の金額と、それを見積もった価格 | ✕ | ○ |
-| `referralFeeRate` | 販売手数料率（0.1 = 10%） | ○ | ✕ |
+| `referralFeeRate` | 販売手数料率（0.1 = 10%） | ○ | ○（金額÷見積もった価格） |
 | `fbaFee` | FBA配送代行手数料 | ○ | ○ |
 | `source` / `error` | 取得元と、調べられなかった理由 | ○ | ○ |
 
-## フェーズBへの拡張の余地
+## スマホへの価格表示（フェーズB）との関係
 
-フェーズBでは、店でJANを読んだ瞬間にスマホへ価格を出す。そのための作りにしてある。
+店でJANを読んだ瞬間にスマホへ価格を出す仕組み（フェーズB）は、ここの `core/` をそのまま使っている。
 
 ```
 research/src/
-  core/              ← フェーズBのサーバー（Cloudflare Workers）にそのまま持っていく部分
+  core/              ← サーバー（worker/）とスマホのアプリでも使う部分
     jan.js           JANの検証
-    profit.js        利益の計算と判定
+    profit.js        利益の計算と判定、仕入れ上限（maxPurchasePrice）
     research.js      provider の選択と、まとめて調べる処理
     providers/       Keepa / SP-API / mock（どれも同じ形 ProductInfo を返す。info.js）
-  cli/               ← フェーズA専用（ファイルの読み書き）
+  cli/               ← PC専用（ファイルの読み書き）
 ```
 
-- `core/` は Node 専用の機能を使っていない（`fetch` と `setTimeout` だけ）。Workers でも動く
-- キーは引数で受け取る。PC では `.env`、Workers では Workers の秘密の設定（secret）から渡す
-- Workers 側は、だいたい次の形になる（未作成）：
-
-```js
-import { createProvider, research } from './core/research.js';
-export default {
-  async fetch(request, env) {
-    const { searchParams } = new URL(request.url);
-    const provider = createProvider(env.PROVIDER || 'keepa', env);
-    const [row] = await research([{ jan: searchParams.get('jan'), purchasePrice: Number(searchParams.get('price')) || null }], provider);
-    return Response.json(row);
-  },
-};
-```
-
-- アプリ側は、返ってきた価格を「Amazon（kind: 'online'）」の店の記録として保存すれば、比較タブで店頭価格と並べられる
+- `core/` は Node 専用の機能を使っていない（`fetch` と `setTimeout` だけ）。Cloudflare Workers でもブラウザでも動く
+- キーは引数で受け取る。PC では `.env`、サーバーでは Cloudflare の秘密の設定（secret）から渡す。サーバーの作り方は worker/README.md
+- `core/` を変えたら、PC・サーバー・スマホのすべてに効く。`npm test` と `worker/` の `npm test` の両方を通すこと
 - 新しい調べ先（楽天・Yahoo!ショッピングなど）を足すときは、`providers/` に ProductInfo を返すファイルを1つ足し、`research.js` の `createProvider` に1行足す
 
 ## テスト

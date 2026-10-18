@@ -50,3 +50,27 @@ select { font:inherit; font-size:14px; color:var(--fg); background:#000; border:
 .item-foot { display:flex; justify-content:space-between; align-items:center; }
 label input[type=checkbox] { width:auto; margin-right:6px; vertical-align:middle; }
 .item-foot { text-align:right; margin-top:8px; }
+/* フェーズ2：Amazon の価格 */
+.amz { margin-top:8px; padding-top:8px; border-top:1px solid var(--line); font-size:14px; }
+.amz .title { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.amz .facts { color:var(--sub); font-size:13px; margin-top:2px; }
+.amz .max { margin-top:6px; font-size:20px; font-weight:700; color:var(--ok); }
+.amz .max.bad { font-size:15px; color:#ff453a; }
+.amz .max.unk { font-size:15px; color:var(--sub); }
+.amz .profit { margin-top:4px; font-size:16px; font-weight:600; }
+.amz .profit .verdict { display:inline-block; min-width:1.6em; text-align:center; }
+.amz .profit.good { color:var(--ok); }
+.amz .profit.mid { color:var(--warn); }
+.amz .profit.bad { color:#ff453a; }
+.amz.none, .amz.loading { color:var(--sub); }
+.amz .warn-t { color:var(--warn); }
+.amz-link { display:inline-block; margin-top:6px; color:var(--accent); font-size:13px; }
+.quick { margin-top:8px; }
+button.wide { width:100%; margin:0 0 10px; }
+h2 { font-size:17px; margin:20px 0 6px; }
+label.field { display:block; font-size:13px; color:var(--sub); margin:10px 0 0; }
+label.field input { margin-top:4px; }
+label.check { display:block; margin:10px 0; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; }
+#prov-seg button { font-size:14px; }
+#btn-test { white-space:nowrap; flex:none; }

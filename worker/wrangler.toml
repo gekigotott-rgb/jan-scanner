@@ -1,0 +1,15 @@
+# Cloudflare Workers の設定。キー類はここに書かない（Cloudflare の画面か `wrangler secret put` で secret に入れる）。
+# 必要な secret：ACCESS_CODE（合言葉）、KEEPA_API_KEY、SP_API_CLIENT_ID、SP_API_CLIENT_SECRET、SP_API_REFRESH_TOKEN
+name = "jan-scanner-api"
+main = "index.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+PROVIDER = "keepa"                                  # アプリが調べ先を指定しなかったときに使う
+ALLOWED_ORIGINS = "https://gekigotott-rgb.github.io" # このページからの問い合わせだけ受け付ける
+
+# 使いすぎ防止：1分あたり60回まで
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }

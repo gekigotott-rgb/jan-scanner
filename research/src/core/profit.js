@@ -52,3 +52,16 @@ export function judge(result, settings = {}) {
   if (result.profit >= s.minProfit && (result.roi == null || result.roi >= s.minRoi)) return '◎';
   return '△';
 }
+
+/**
+ * 仕入れ上限：この店頭価格以下で買えば「◎」になる金額（円、切り捨て）。
+ * 店で読んだ直後（店頭価格がまだ分からないとき）に、買ってよい値段の目安として出す。
+ * 販売価格や手数料が分からないときは null。0 以下なら、いくらで買っても ◎ にならない。
+ */
+export function maxPurchasePrice(kind, info, settings = {}) {
+  const s = { ...DEFAULT_SETTINGS, ...settings };
+  const c = calcProfit({ purchasePrice: 0, kind }, info, s);
+  if (c.profit == null) return null;
+  const net = c.profit; // 仕入れ値 0 円のときの利益 = 販売価格から手数料・経費を引いた残り
+  return Math.floor(Math.min(net - s.minProfit, net / (1 + s.minRoi)));
+}
