@@ -1,7 +1,7 @@
 // 入力ファイルを、調べる処理の形（records）にそろえる。
 // 対応している形式：
 //   - Expo版アプリの JSON：{ app: 'jan-scanner', format_version: 1, records: [...] }
-//   - PWA版（このリポジトリ）の JSON：[{ id, jan, scanned_at, store_price, note, kind }, ...]
+//   - PWA版（このリポジトリ）の JSON：[{ id, jan, scanned_at, store_price, note, kind, store }, ...]
 //   - このスクリプトが作った結果の CSV（Excel で「Amazon価格(手入力)」などを書き込んで保存したもの）
 
 import { MANUAL_PRICE, MANUAL_FBA } from './output.js';
@@ -29,6 +29,7 @@ function parseJson(text, fileName) {
       jan: r.jan,
       purchasePrice: r.store_price,
       kind: r.kind,
+      storeName: r.store,
       scannedAt: r.scanned_at,
       note: r.note,
     }));

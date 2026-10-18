@@ -65,23 +65,170 @@ $('kind-seg').addEventListener('click', (e) => {
 syncKindSeg();
 const kindTag = (k) => (KIND_LABEL[k] ? `<span class="ktag ${k}">${KIND_LABEL[k]}</span>` : '');
 
+// ---- 店（いまいる店。記録ごとに店名を残す） ----
+const loadPref = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } };
+const savePref = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+let stores = loadPref('stores', []);
+let currentStore = loadPref('currentStore', '');
+
+function renderStoreSel() {
+  const names = stores.includes(currentStore) || !currentStore ? stores : [...stores, currentStore];
+  $('store-sel').innerHTML = '<option value="">店：未設定</option>'
+    + names.map(n => `<option value="${esc(n)}"${n === currentStore ? ' selected' : ''}>店：${esc(n)}</option>`).join('')
+    + '<option value="__add">＋ 店を追加…</option>'
+    + (currentStore ? `<option value="__remove">－「${esc(currentStore)}」を一覧から外す</option>` : '');
+}
+$('store-sel').addEventListener('change', () => {
+  const v = $('store-sel').value;
+  if (v === '__add') {
+    const name = (prompt('店の名前（例：〇〇駅前店）') || '').trim();
+    if (name) {
+      if (!stores.includes(name)) { stores.push(name); savePref('stores', stores); }
+      currentStore = name;
+    }
+  } else if (v === '__remove') {
+    // 一覧から外すだけ。これまでの記録の店名は残る
+    if (confirm(`「${currentStore}」を店の一覧から外しますか？（これまでの記録はそのまま残ります）`)) {
+      stores = stores.filter(n => n !== currentStore); savePref('stores', stores);
+      currentStore = '';
+    }
+  } else currentStore = v;
+  savePref('currentStore', currentStore);
+  renderStoreSel();
+});
+renderStoreSel();
+
+// ---- 価格入力 ON / OFF（OFF のときは読み取ったらすぐ価格なしで登録して、続けて読む） ----
+let priceMode = loadPref('priceMode', true);
+function syncPriceMode() {
+  $('btn-price-mode').textContent = `価格入力 ${priceMode ? 'ON' : 'OFF'}`;
+  $('btn-price-mode').classList.toggle('on', priceMode);
+  $('scan-hint').textContent = priceMode
+    ? '読み取ると価格入力パネルが出ます。値札がなければ「価格なしで登録」。'
+    : '連続で読み取り、価格なしで登録します。同じコードは3秒間は無視します。';
+}
+$('btn-price-mode').onclick = () => { priceMode = !priceMode; savePref('priceMode', priceMode); syncPriceMode(); };
+syncPriceMode();
+
 // 最後に読んだ記録。Amazon の情報が届いたら、この枠に足して表示し直す
 let lastScan = null; // { id, head }
+let busy = false;    // パネルを閉じるまで次のコードを受け付けない
 
 async function onScanned(jan) {
-  const before = (await DB.all()).filter(r => r.jan === jan); // 新しい順（今回の分を含まない）
-  const repeat = before.length > 0;
-  notify(repeat);
-  const id = await DB.add(jan, currentKind);
-  scanCount++;
-  $('status').textContent = `読み取り中… 今回 ${scanCount}件（${KIND_LABEL[currentKind]}）`;
-  $('last').className = 'last ' + (repeat ? 'repeat' : 'fresh');
-  lastScan = { id, head: `<div class="jan">${jan}${kindTag(currentKind)}</div>` + (repeat
-    ? `<div class="tag">⚠ ${before.length + 1}回目（前回 ${KIND_LABEL[before[0].kind] ? KIND_LABEL[before[0].kind] + ' ' : ''}${fmtTime(before[0].scanned_at)}・${ago(before[0].scanned_at)}）</div>`
-    : `<div class="tag">新規</div>`) };
-  await renderLast();
-  if (Price.enabled()) fetchAmazon(id); // 保存の後に調べる（電波がなくても記録は残る）
+  if (busy) return;
+  if (/^19[12]/.test(jan)) return; // 本の2段目のバーコード（値段と分類のコード）は商品のコードではない
+  busy = true;
+  try {
+    const all = await DB.all();
+    const before = all.filter(r => r.jan === jan); // 新しい順（今回の分を含まない）
+    const repeat = before.length > 0;
+    notify(repeat);
+    const rec = { jan, kind: currentKind, store: currentStore };
+    // 先に保存してから Amazon を調べる（電波がなくても記録は残る）。価格はパネルで入れる
+    const id = await DB.add(rec);
+    scanCount++;
+    $('status').textContent = `読み取り中… 今回 ${scanCount}件（${KIND_LABEL[currentKind]}${currentStore ? '・' + currentStore : ''}）`;
+    $('last').className = 'last ' + (repeat ? 'repeat' : 'fresh');
+    lastScan = { id, head: `<div class="jan">${jan}${kindTag(currentKind)}</div>` + (repeat
+      ? `<div class="tag">⚠ ${before.length + 1}回目（前回 ${KIND_LABEL[before[0].kind] ? KIND_LABEL[before[0].kind] + ' ' : ''}${fmtTime(before[0].scanned_at)}・${ago(before[0].scanned_at)}）</div>`
+      : `<div class="tag">新規</div>`) };
+    await renderLast();
+    if (Price.enabled()) fetchAmazon(id);
+    if (priceMode) openPanel(id, rec, before, all);
+    else busy = false;
+  } catch (e) { busy = false; }
 }
+
+// ---- 価格入力パネル ----
+let pending = null; // { id, rec, hist }
+let digits = '';
+
+// 同じJAN・同じ種別の過去の価格（この店の前回／ほかの店の最安）
+function priceHistory(all, rec) {
+  const same = all.filter(r => r.jan === rec.jan && (r.kind || '') === (rec.kind || '') && r.store_price != null);
+  const here = same.find(r => (r.store || '') === rec.store); // all は新しい順
+  const best = same.filter(r => (r.store || '') !== rec.store)
+    .reduce((m, r) => (!m || r.store_price < m.store_price ? r : m), null);
+  return { here, best };
+}
+
+function openPanel(id, rec, before, all) {
+  pending = { id, rec, hist: priceHistory(all, rec) };
+  digits = '';
+  $('p-jan').innerHTML = `${rec.jan}${kindTag(rec.kind)}`;
+  $('p-sub').className = 'p-sub' + (before.length ? ' repeat' : '');
+  $('p-sub').textContent = (before.length ? `⚠ ${before.length + 1}回目（前回 ${fmtTime(before[0].scanned_at)}）` : '新規')
+    + ` ・ ${rec.store || '店：未設定'}`;
+  const { here, best } = pending.hist;
+  $('p-hist').innerHTML = [
+    here ? `この店の前回 <b>${yen(here.store_price)}</b>（${fmtTime(here.scanned_at)}）` : '',
+    best ? `ほかの店の最安 <b>${yen(best.store_price)}</b>（${esc(best.store || '店なし')}）` : '',
+  ].filter(Boolean).join('<br>');
+  $('p-amz').innerHTML = '';
+  renderPrice();
+  $('panel').hidden = false;
+}
+
+function renderPrice() {
+  const price = digits ? Number(digits) : null;
+  $('p-price').textContent = price != null ? yen(price) : '価格を入力';
+  $('p-price').classList.toggle('empty', price == null);
+  $('p-ok').disabled = !price;
+  const { here, best } = pending.hist;
+  const lines = [];
+  if (price && best) {
+    const d = price - best.store_price;
+    lines.push(d < 0 ? `<span class="ok">ほかの店より ${yen(-d)} 安い！</span>`
+      : d > 0 ? `<span class="warn">${esc(best.store || '店なし')}のほうが ${yen(d)} 安い</span>`
+        : 'ほかの店の最安と同じ');
+  }
+  if (price && here && here.store_price !== price) {
+    const d = price - here.store_price;
+    lines.push(`<span class="${d < 0 ? 'ok' : 'warn'}">この店の前回から ${d < 0 ? '↓' : '↑'}${yen(Math.abs(d))}</span>`);
+  }
+  $('p-cmp').innerHTML = lines.join('<br>');
+  renderPanelAmz();
+}
+
+// パネルにも Amazon の情報（仕入れ上限・打ち込んだ価格での利益）を出す
+async function renderPanelAmz() {
+  if (!pending || !Price.enabled()) return;
+  const { id } = pending, typed = digits;
+  const rec = await getRec(id);
+  if (!rec) return;
+  const html = await amazonHtml({ ...rec, store_price: typed ? Number(typed) : null });
+  if (pending && pending.id === id && digits === typed) $('p-amz').innerHTML = html;
+}
+
+function closePanel() {
+  $('panel').hidden = true;
+  pending = null; digits = '';
+  busy = false;
+}
+
+$('keypad').addEventListener('click', (e) => {
+  const k = e.target.dataset.k; if (!k) return;
+  if (k === 'del') digits = digits.slice(0, -1);
+  else if (digits.length + k.length <= 7) digits = (digits + k).replace(/^0+/, '');
+  renderPrice();
+});
+async function submitPanel(price) {
+  if (!pending) return;
+  const rec = await getRec(pending.id);
+  if (rec && price != null) { rec.store_price = price; await DB.update(rec); }
+  closePanel();
+  renderLast();
+}
+$('p-ok').onclick = () => submitPanel(digits ? Number(digits) : null);
+$('p-skip').onclick = () => submitPanel(null);
+// 読み間違いなど。保存しておいた記録を消す
+$('p-cancel').onclick = async () => {
+  if (!pending) return;
+  await DB.remove(pending.id);
+  scanCount = Math.max(0, scanCount - 1);
+  if (lastScan && lastScan.id === pending.id) { lastScan = null; $('last').className = 'last'; $('last').innerHTML = ''; }
+  closePanel();
+};
 
 async function renderLast() {
   if (!lastScan) return;
@@ -136,6 +283,7 @@ async function fetchAmazon(id) {
 }
 function refreshShown(id) {
   if (lastScan && lastScan.id === id) renderLast();
+  if (pending && pending.id === id) renderPanelAmz();
   if (isActive('list')) renderList();
 }
 
@@ -202,6 +350,14 @@ $('filter-seg').addEventListener('click', (e) => {
   renderList();
 });
 
+// 一覧で店を付け替えるときの選択肢（店の一覧＋その記録の店名）
+function storeOptions(cur) {
+  const names = new Set(stores);
+  if (cur) names.add(cur);
+  return '<option value="">店なし</option>'
+    + [...names].map(n => `<option value="${esc(n)}"${n === (cur || '') ? ' selected' : ''}>${esc(n)}</option>`).join('');
+}
+
 let listRendering = Promise.resolve();
 function renderList() { listRendering = listRendering.then(renderListNow, renderListNow); return listRendering; }
 async function renderListNow() {
@@ -225,7 +381,7 @@ async function renderListNow() {
     const diff = r.store_price == null ? [] :
       allRows.filter(o => o.jan === r.jan && o.id !== r.id && (o.kind || '') === (r.kind || '') && o.store_price != null && o.store_price !== r.store_price);
     const alertHtml = diff.length
-      ? `<p class="alert">⚠ 過去の店頭価格と違います：${diff.map(o => `${yen(o.store_price)}（${fmtTime(o.scanned_at)}）`).join('、')}</p>` : '';
+      ? `<p class="alert">⚠ 過去の店頭価格と違います：${diff.map(o => `${yen(o.store_price)}（${o.store ? esc(o.store) + '・' : ''}${fmtTime(o.scanned_at)}）`).join('、')}</p>` : '';
     return `<li data-id="${r.id}" class="${diff.length ? 'warn' : ''}">
       <div class="item-head"><span class="jan">${esc(r.jan)}${kindTag(r.kind)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}${r.exported_at ? ' ・ 書き出し済み' : ''}</span></div>
       ${alertHtml}
@@ -235,11 +391,14 @@ async function renderListNow() {
         <input type="text" placeholder="メモ" data-f="note" value="${esc(r.note)}">
       </div>
       <div class="item-foot">
+        <span class="selects">
+        <select data-f="store">${storeOptions(r.store)}</select>
         <select data-f="kind">
           <option value=""${r.kind ? '' : ' selected'}>種別なし</option>
           <option value="new"${r.kind === 'new' ? ' selected' : ''}>新品</option>
           <option value="used"${r.kind === 'used' ? ' selected' : ''}>中古</option>
         </select>
+        </span>
         <button class="danger" data-del="1">削除</button>
       </div>
     </li>`;
@@ -284,9 +443,9 @@ async function buildExport(kind, rows, now = new Date()) {
     const a = r.amazon && r.amazon.found ? r.amazon : null;
     const ev = a ? await Price.evaluate(r) : null;
     lines.push([r.id, q(r.jan), toJst(r.scanned_at).slice(0, 19).replace('T', ' '), r.store_price ?? '', q(r.note), KIND_LABEL[r.kind] || '',
-      q(a?.title), ev?.calc.sellPrice ?? '', ev?.maxPrice ?? '', ev?.calc.profit ?? '', a ? ev.verdict : '', q(a?.asin), a?.salesRank ?? ''].join(','));
+      q(a?.title), ev?.calc.sellPrice ?? '', ev?.maxPrice ?? '', ev?.calc.profit ?? '', a ? ev.verdict : '', q(a?.asin), a?.salesRank ?? '', q(r.store)].join(','));
   }
-  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note,kind,amazon_title,amazon_sell_price,max_purchase_price,profit,verdict,asin,sales_rank',
+  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note,kind,amazon_title,amazon_sell_price,max_purchase_price,profit,verdict,asin,sales_rank,store',
     ...lines].join('\r\n');
   return { body, type: 'text/csv', name: `jan-scan_${stamp}.csv` };
 }

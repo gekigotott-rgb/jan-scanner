@@ -110,8 +110,8 @@ test('spapi provider: 認証 → 商品検索 → 価格 → 手数料の順に�
 test('入力：Expo版とPWA版のJSONを読める', () => {
   const expo = parseScanExport(JSON.stringify({ app: 'jan-scanner', format_version: 1, records: [{ jan: '4901234567894', product_name: 'お茶', store: 'A店', store_price: 98, scanned_at: '2026-10-11T01:00:00Z', scanned_at_local: '2026/10/11 10:00' }] }));
   assert.deepEqual(expo[0], { jan: '4901234567894', purchasePrice: 98, kind: '', storeName: 'A店', productName: 'お茶', scannedAt: '2026/10/11 10:00', note: '', manualSellPrice: null, manualFbaFee: null });
-  const pwa = parseScanExport('﻿' + JSON.stringify([{ id: 1, jan: '4901234567894', scanned_at: '2026-10-11T10:00:00+09:00', store_price: null, note: 'x', kind: 'used' }]));
-  assert.deepEqual([pwa[0].purchasePrice, pwa[0].kind, pwa[0].note], [null, 'used', 'x']);
+  const pwa = parseScanExport('﻿' + JSON.stringify([{ id: 1, jan: '4901234567894', scanned_at: '2026-10-11T10:00:00+09:00', store_price: null, note: 'x', kind: 'used', store: 'C店' }]));
+  assert.deepEqual([pwa[0].purchasePrice, pwa[0].kind, pwa[0].note, pwa[0].storeName], [null, 'used', 'x', 'C店']);
   assert.throws(() => parseScanExport('{ broken'), /JSON として読めません/);
   assert.throws(() => parseScanExport('a,b'), /読めない形式/);
 });
