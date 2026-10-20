@@ -16,6 +16,10 @@
 <body>
 <main>
   <section id="view-scan" class="view active">
+    <div class="row scan-opts">
+      <select id="store-sel" aria-label="いまの店"></select>
+      <button id="btn-price-mode" class="chip"></button>
+    </div>
     <div class="seg" id="kind-seg">
       <button data-kind="new" class="on">新品</button>
       <button data-kind="used">中古</button>
@@ -30,7 +34,7 @@
     <div class="row">
       <button id="btn-toggle" class="primary">スキャン開始</button>
     </div>
-    <p class="hint">連続で読み取ります。同じコードは3秒間は無視します。</p>
+    <p class="hint" id="scan-hint"></p>
   </section>
 
   <section id="view-list" class="view">
@@ -82,6 +86,33 @@
     <p class="hint">◎＝利益とROIの両方が基準以上。価格は調べた時点のものなので、仕入れる前にAmazonのページでも確かめてください。</p>
   </section>
 </main>
+
+<!-- 読み取ったあとに出る価格入力パネル -->
+<div id="panel" class="sheet" hidden>
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <div>
+        <div id="p-jan" class="jan"></div>
+        <div id="p-sub" class="p-sub"></div>
+      </div>
+      <button id="p-cancel">やめる</button>
+    </div>
+    <div id="p-hist" class="hist"></div>
+    <div id="p-amz"></div>
+    <div id="p-price" class="price-display"></div>
+    <div id="p-cmp" class="cmp"></div>
+    <div class="keypad" id="keypad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="00">00</button><button data-k="0">0</button><button data-k="del" aria-label="1文字消す">⌫</button>
+    </div>
+    <div class="row">
+      <button id="p-skip">価格なしで登録</button>
+      <button id="p-ok" class="primary">登録</button>
+    </div>
+  </div>
+</div>
 
 <nav>
   <button id="tab-scan" class="tab active">スキャン</button>

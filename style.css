@@ -74,3 +74,33 @@ label.check { display:block; margin:10px 0; }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 10px; }
 #prov-seg button { font-size:14px; }
 #btn-test { white-space:nowrap; flex:none; }
+
+.item-foot .selects { display:flex; gap:6px; min-width:0; }
+.item-foot select { max-width:140px; }
+
+/* スキャン画面の上：いまの店・価格入力 ON/OFF */
+.scan-opts { margin:0 0 10px; }
+.scan-opts select { flex:1; min-width:0; font-size:16px; padding:10px; border-radius:10px; }
+button.chip { white-space:nowrap; padding:10px 12px; color:var(--sub); }
+button.chip.on { color:var(--ok); border-color:var(--ok); }
+button:disabled { opacity:.4; }
+
+/* 価格入力パネル（画面の下から出る） */
+.sheet { position:fixed; inset:0; z-index:10; display:flex; align-items:flex-end; background:rgba(0,0,0,.55); }
+.sheet[hidden] { display:none; }
+.sheet-body { width:100%; background:var(--card); border-radius:16px 16px 0 0; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); }
+.sheet-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.sheet-head .jan { font-size:20px; font-weight:600; letter-spacing:1px; }
+.p-sub { margin-top:2px; font-size:13px; color:var(--ok); font-weight:600; }
+.p-sub.repeat { color:var(--warn); }
+.hist { margin-top:8px; font-size:14px; color:var(--sub); line-height:1.6; }
+.hist b { color:var(--fg); }
+.price-display { margin-top:8px; font-size:34px; font-weight:700; text-align:right; }
+.price-display.empty { color:var(--sub); font-size:22px; font-weight:400; padding:8px 0; }
+.cmp { min-height:20px; font-size:14px; font-weight:600; text-align:right; line-height:1.5; }
+.cmp .ok { color:var(--ok); }
+.cmp .warn { color:var(--warn); }
+.keypad { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:8px; }
+.keypad button { padding:14px 0; font-size:22px; background:#2c2c2e; }
+.sheet .row button { flex:1; padding:14px; }
+.sheet .row button.primary { width:auto; }

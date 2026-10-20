@@ -1,16 +1,19 @@
 # 利益リサーチ（フェーズA）
 
-スキャナーアプリが書き出した **JSON** を読み、Amazon.co.jp の価格・手数料・ランキングを調べて、利益の一覧を **CSV** で作るPC用のスクリプト。
+スキャナーアプリが書き出した **JSON** を読み、Amazon.co.jp の価格と利益を **CSV** の一覧にするPC用のスクリプト。
 
-- 対応する入力：Expo版アプリの「JSONで書き出す」／このリポジトリのPWA版の「JSON」
-- 調べる先（provider）：**Keepa** / **SP-API** / **mock**（お試し用の架空データ）
+- 対応する入力：Expo版アプリの「JSONで書き出す」／このリポジトリのPWA版の「JSON」／このスクリプトが作った結果の CSV
+- 調べる先（provider）：
+  - **none**（最初はこれ）：API を使わない。CSV に「Amazonで見る」「Keepaで見る」のリンクを付けるので、価格を見て手で入力する
+  - **keepa** / **spapi**：API で自動で調べる（有料・キーが必要）
+  - **mock**：お試し用の架空データ
 - 必要なもの：Node.js 20.12 以上。追加のインストールは不要
 
 ## 準備
 
 ### Node.js を入れる
 
-https://nodejs.org/ja から LTS 版を入れる。入ったかどうかは、ターミナル（Windows は PowerShell）で確かめる：
+https://nodejs.org/ja から LTS 版を入れる。入ったかどうかは、ターミナル（Windows はコマンドプロンプトか PowerShell）で確かめる：
 
 ```sh
 node --version   # v20.12.0 以上ならOK
@@ -18,58 +21,68 @@ node --version   # v20.12.0 以上ならOK
 
 ### スマホから JSON を取り出す
 
+- **Expo版**：設定タブの「データの書き出し」で「JSON」を押し、メールで自分宛てに送るか、「ファイルに保存」で iCloud Drive に保存する
 - **PWA版**：一覧の下の「JSON」ボタンを押し、共有メニューから AirDrop・メール・ファイルアプリなどで PC に送る。ファイル名は `jan-scan_2026-10-17_1241.json` のようになる
   - ふだんは**まだ書き出していない記録だけ**が出る。前に書き出した分も含めたいときは、「書き出し済みも含めて全件」にチェックを入れてから押す
-  - **CSV ではなく JSON** を使う。CSV を渡すとエラーになる
-- **Expo版**：「JSONで書き出す」で同じように PC に送る
+- アプリの **CSV ではなく JSON** を使う（アプリの CSV を渡すと「読めない形式です」になる）
 
 受け取ったファイルは、どこに置いてもよい（`research` フォルダの中でなくてもよい）。
 
-## 使い方
+## 使い方（API なし・手入力）
 
 ```sh
 cd research
 node src/cli/main.js 書き出したファイル.json
 ```
 
-`書き出したファイル_利益.csv` ができる。Excel でそのまま開ける（文字化けしない・JANが崩れない）。並び順は、判定の良い順（◎ → △ → ? → ×）・利益の大きい順。
+1. `書き出したファイル_利益.csv` ができる。Excel で開く（文字化けしない・JAN が崩れない）
+2. 「Amazonで見る」「Keepaで見る」をクリックして価格を調べ、**「Amazon価格(手入力)」**に書き込む
+   - FBA手数料が分かれば **「FBA手数料(手入力)」** にも書く（空なら設定の目安 400円で計算）
+   - 全部埋めなくてよい。調べた分だけでよい
+3. Excel で**上書き保存**し、**Excel を閉じる**（「この形式のままにしますか」と聞かれたら「はい」）
+4. 同じ CSV をもう一度スクリプトに読ませると、利益・ROI・判定が入る
 
-複数のファイルをまとめて調べることもできる：`node src/cli/main.js 1日目.json 2日目.json --out まとめ.csv`
+```sh
+node src/cli/main.js 書き出したファイル_利益.csv
+```
 
-同じ JAN が何回出てきても、問い合わせは1回だけ（トークンや時間の節約）。CSV には記録ごとに1行ずつ出る。
+- 結果の CSV を読ませたときは、そのファイルを計算し直して上書きする。手入力した値はそのまま残る
+- 同じ JSON をもう一度読ませたときは、手入力済みの CSV を消さないよう `_利益(2).csv` のように別の名前で保存する
+- 並び順は、判定の良い順（◎ → △ → ? → ×）・利益の大きい順
+- 複数のファイルをまとめて調べることもできる：`node src/cli/main.js 1日目.json 2日目.json --out まとめ.csv`
+
+同じ JAN が何回出てきても、調べるのは1回だけ（API のトークンや時間の節約）。CSV には記録ごとに1行ずつ出る。
 
 ### オプション
 
 | オプション | 意味 | 指定しないとき |
 |---|---|---|
-| `--provider keepa\|spapi\|mock` | 調べる先 | `config.json` の `provider`。それもなければ `keepa` |
-| `--out <ファイル名>` | 結果 CSV の保存先 | `<1つ目の入力ファイル名>_利益.csv`（入力と同じフォルダ） |
+| `--provider none\|keepa\|spapi\|mock` | 調べる先 | `config.json` の `provider`。それもなければ `none` |
+| `--out <ファイル名>` | 結果 CSV の保存先 | JSON のとき `<1つ目の入力ファイル名>_利益.csv`（すでにあれば `_利益(2).csv`）。CSV のときはそのファイルに上書き |
 | `--config <ファイル名>` | 設定ファイル | `research/config.json`。なければ最初の値で動く |
 | `-h`, `--help` | 使い方を表示 | |
 
 `npm run research -- 書き出したファイル.json` でも同じように動く（`--` のあとにファイル名とオプションを書く）。
 
-### まずはキーなしで試す
+### お試しデータで試す
 
 ```sh
 node src/cli/main.js sample/sample-expo.json --provider mock
 ```
 
-mock の数字は架空のもの。流れと CSV の見た目を確かめる用。
-
-### キーを設定する
+### API を使うようになったら
 
 1. `.env.example` を `.env` という名前でコピーし、使うほうのキーを書く
-2. `config.example.json` を `config.json` という名前でコピーし、`provider` と判定の基準を自分用に直す
-
-`.env` と `config.json` は Git に入らない。
+2. `config.example.json` を `config.json` という名前でコピーし、`provider` を `keepa` か `spapi` にする
 
 ```sh
-cp .env.example .env
-cp config.example.json config.json
+copy .env.example .env
+copy config.example.json config.json
 ```
 
-（Windows の PowerShell では `copy .env.example .env` のように `copy` を使う）
+（Mac や Linux では `copy` のかわりに `cp`）
+
+`.env` と `config.json` は Git に入らない。手入力した価格があれば、API の結果より手入力を優先する。
 
 ## 結果CSVの見方
 
@@ -77,24 +90,26 @@ cp config.example.json config.json
 |---|---|
 | 判定 | ◎ / △ / × / ?（下の「判定と計算」） |
 | JAN | 13桁のJAN。Excel で数字が崩れない形で入れてある |
-| Amazonの商品名 | Amazon 側の商品名 |
-| アプリの商品名・店 | アプリで入れた商品名と店（Expo版のみ。PWA版は空） |
-| 日時 | 読み取った日時 |
-| 種別 | 新品 / 中古（PWA版で選んだもの。空なら新品として計算） |
+| アプリの商品名 | アプリで入れた商品名（Expo版のみ。PWA版は空） |
+| Amazon・Keepa | クリックすると、その商品の Amazon のページ（分からなければ JAN で検索した結果）と Keepa のページが開く |
 | 仕入れ値 | アプリで入れた店頭価格（税込として扱う） |
-| 販売価格・販売価格の種類 | 計算に使った Amazon の価格と、それが「カート」「新品最安」「中古最安」のどれか |
-| 販売手数料・FBA手数料 | 引いた手数料（円） |
+| Amazon価格(手入力)・FBA手数料(手入力) | 自分で書き込む列。書いた値で計算する |
 | 利益 | 1個売ったときの手残り（円） |
-| 利益率(対販売価格) | 利益 ÷ 販売価格 |
 | ROI(対仕入れ値) | 利益 ÷ 仕入れ値 |
-| ランキング | 今の売れ筋ランキング（小さいほど売れている） |
+| 販売価格・販売価格の種類 | 計算に使った価格と、それが「手入力」「カート」「新品最安」「中古最安」のどれか |
+| 販売手数料・FBA手数料 | 引いた手数料（円） |
+| 利益率(対販売価格) | 利益 ÷ 販売価格 |
+| 店・日時 | アプリで入れた店（Expo版のみ）と、読み取った日時 |
+| 種別 | 新品 / 中古（PWA版で選んだもの。空なら新品として計算） |
+| Amazonの商品名 | Amazon 側の商品名（API を使ったときだけ） |
+| ランキング | 今の売れ筋ランキング（小さいほど売れている。API を使ったときだけ） |
 | 30日の販売数の目安 | Keepa のみ（下を参照） |
-| Amazon本体 | Amazon 自身が売っていれば「あり(価格)」 |
-| 新品最安・中古最安 | 参考の最安値 |
-| ASIN・Amazonのページ | 商品ページへのリンク。仕入れ前にここで確かめる |
+| Amazon本体 | Amazon 自身が売っていれば「あり(価格)」（API を使ったときだけ） |
+| 新品最安・中古最安・ASIN | 参考（API を使ったときだけ） |
 | メモ | アプリで入れたメモ |
-| 取得元 | keepa / spapi / mock |
+| 取得元 | none / 手入力 / keepa / spapi / mock（手入力で上書きしたときは「keepa+手入力」など） |
 | エラー | 調べられなかった理由 |
+
 
 ## 判定と計算
 
@@ -110,18 +125,20 @@ ROI  = 利益 ÷ 仕入れ値
 | × | 赤字 |
 | ? | 判定できない（店頭価格が未入力・Amazonに商品がない・出品がない・エラー） |
 
-- 販売価格は、新品ならカート価格（なければ新品最安）、中古（PWA版で「中古」にした記録）なら中古最安
+- 販売価格は、手入力があればその価格。なければ、新品ならカート価格（なければ新品最安）、中古（PWA版で「中古」にした記録）なら中古最安
+- 手入力のときの手数料は目安（販売手数料 10%、FBA手数料 400円）。正確な金額は Amazon の「FBA料金シミュレーター」（無料）で確かめ、「FBA手数料(手入力)」に書くとよい
 - 金額はすべて税込。消費税の還付などは考えていない
 - 「30日の販売数の目安」は、30日間にランキングが上がった回数（Keepa のみ）。1回 ≒ 1個売れた目安
 - 「Amazon本体」が「あり」の商品は、Amazon と価格競争になるので注意
 
 「?」になる主な理由（エラー列も見る）：
 
+- まだ「Amazon価格(手入力)」を書いていない（API なしのとき）
 - アプリで店頭価格を入れていない
 - JAN の桁数やチェックデジットがおかしい（「JANコードが正しくありません」）
 - Amazon に商品ページがない、または出品がなく価格が分からない
-- Keepa で FBA手数料が分からない商品（`useFba` を false にすれば FBA手数料なしで計算される）
-- 中古の記録で、Amazon に中古の出品がないとき
+- Keepa で FBA手数料が分からない商品（`useFba` を false にするか、「FBA手数料(手入力)」に書く）
+- 中古の記録で、Amazon に中古の出品がないとき（「Amazon価格(手入力)」に中古の価格を書けば計算できる）
 
 ### 設定（config.json の settings）
 
@@ -132,7 +149,9 @@ ROI  = 利益 ÷ 仕入れ値
 | `otherCostPerItem` | `0` | 1個あたりのその他経費（梱包材など） |
 | `minProfit` | `300` | ◎ にする利益（円） |
 | `minRoi` | `0.15` | ◎ にする ROI（0.15 = 15%） |
-| `minReferralFee` | `30` | 販売手数料の最低額（Keepa のときに使う） |
+| `minReferralFee` | `30` | 販売手数料の最低額 |
+| `defaultReferralFeeRate` | `0.1` | 手入力のときの販売手数料率の目安（カテゴリによって8〜15%） |
+| `defaultFbaFee` | `400` | 手入力のときのFBA手数料の目安（商品の大きさ・重さで変わる） |
 
 ## Keepa と SP-API の違い
 
@@ -148,11 +167,14 @@ ROI  = 利益 ÷ 仕入れ値
 
 | 表示 | 直し方 |
 |---|---|
-| `KEEPA_API_KEY が設定されていません` | `.env` に Keepa のキーを書く。キーなしで試すだけなら `--provider mock` |
-| `SP_API_CLIENT_ID / … が設定されていません` | `.env` に SP-API の3つの値を書く |
-| `… は JSON として読めません` | アプリから **JSON** で書き出し直す（CSV は使えない） |
+| `… に保存できません。Excel で開いていたら…` | 結果の CSV を Excel で開いたままになっている。Excel を閉じてからもう一度実行する |
+| `… は読めない形式です` | アプリの **JSON** か、このスクリプトが作った CSV を渡す（アプリの CSV は使えない） |
+| `… は JSON として読めません` | ファイルが途中で切れている。アプリから書き出し直す |
 | `… はスキャナーアプリの書き出し形式ではありません` | 別の JSON を渡している。アプリの書き出しファイルか確かめる |
-| `知らない provider です` | `--provider` は keepa / spapi / mock のどれか |
+| `… に「JAN」の列がありません` | CSV の1行目（列の名前）を消したり変えたりしている。列の名前はそのままにする |
+| `KEEPA_API_KEY が設定されていません` | `.env` に Keepa のキーを書く。キーなしで使うなら `--provider none` |
+| `SP_API_CLIENT_ID / … が設定されていません` | `.env` に SP-API の3つの値を書く |
+| `知らない provider です` | `--provider` は none / keepa / spapi / mock のどれか |
 | `Keepa エラー: 401` など | キーが違う、契約が切れている、トークンが足りない。Keepa のサイトで確かめる |
 | `SP-API の認証に失敗しました` | client id / secret / refresh token のどれかが違う |
 | `SP-API エラー(…)` | その商品だけ調べられなかった。ほかの行は続けて調べてある |
@@ -166,7 +188,7 @@ ROI  = 利益 ÷ 仕入れ値
 
 ## データの形（ProductInfo）
 
-どの provider も、1つの JAN について次の形で返す（`src/core/providers/info.js`）。金額は円・税込で、分からない項目は `null`。
+どの provider も、1つの JAN について次の形で返す（`src/core/providers/info.js`）。金額は円・税込で、分からない項目は `null`。none はすべて `null`（`found: false`）で返し、手入力があれば `manualPrice` などが入る。
 
 | 項目 | 中身 | Keepa | SP-API |
 |---|---|---|---|
@@ -181,6 +203,7 @@ ROI  = 利益 ÷ 仕入れ値
 | `referralFee` / `feeBasePrice` | 販売手数料の金額と、それを見積もった価格 | ✕ | ○ |
 | `referralFeeRate` | 販売手数料率（0.1 = 10%） | ○ | ○（金額÷見積もった価格） |
 | `fbaFee` | FBA配送代行手数料 | ○ | ○ |
+| `manualPrice` | 手入力した販売価格（`applyManual` が入れる） | | |
 | `source` / `error` | 取得元と、調べられなかった理由 | ○ | ○ |
 
 ## スマホへの価格表示（フェーズB）との関係
@@ -192,8 +215,8 @@ research/src/
   core/              ← サーバー（worker/）とスマホのアプリでも使う部分
     jan.js           JANの検証
     profit.js        利益の計算と判定、仕入れ上限（maxPurchasePrice）
-    research.js      provider の選択と、まとめて調べる処理
-    providers/       Keepa / SP-API / mock（どれも同じ形 ProductInfo を返す。info.js）
+    research.js      provider の選択と、まとめて調べる処理、手入力の反映（applyManual）
+    providers/       none / Keepa / SP-API / mock（どれも同じ形 ProductInfo を返す。info.js）
   cli/               ← PC専用（ファイルの読み書き）
 ```
 
@@ -208,4 +231,4 @@ research/src/
 npm test
 ```
 
-ネットにはつながずに、JAN の検証・利益の計算と判定・入力 JSON の読み取り・CSV の形・Keepa と SP-API の応答の読み取りを確かめる。
+ネットにはつながずに、JAN の検証・利益の計算と判定・手入力の反映・入力ファイル（JSON / CSV / Shift_JIS）の読み取り・CSV の形・Keepa と SP-API の応答の読み取りを確かめる。

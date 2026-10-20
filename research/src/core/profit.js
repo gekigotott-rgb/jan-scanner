@@ -7,6 +7,9 @@ export const DEFAULT_SETTINGS = {
   minProfit: 300,        // この金額以上の利益で「◎」
   minRoi: 0.15,          // かつ、仕入れ値に対する利益率がこれ以上で「◎」
   minReferralFee: 30,    // 販売手数料の最低額（ほとんどのカテゴリで30円）
+  // 価格を手で入力したときに使う目安（API がないと正確な値は分からない）
+  defaultReferralFeeRate: 0.1, // 販売手数料率。カテゴリによって8〜15%
+  defaultFbaFee: 400,          // FBA手数料。商品の大きさ・重さで変わる
 };
 
 /**
@@ -19,7 +22,9 @@ export function calcProfit({ purchasePrice, kind }, info, settings = {}) {
   const out = { sellPrice: null, sellPriceType: null, referralFee: null, fbaFee: null, profit: null, margin: null, roi: null };
   if (!info || !info.found) return out;
 
-  if (kind === 'used') {
+  if (info.manualPrice != null) {
+    [out.sellPrice, out.sellPriceType] = [info.manualPrice, '手入力'];
+  } else if (kind === 'used') {
     if (info.usedPrice != null) [out.sellPrice, out.sellPriceType] = [info.usedPrice, '中古最安'];
   } else if (info.buyBoxPrice != null) {
     [out.sellPrice, out.sellPriceType] = [info.buyBoxPrice, 'カート'];

@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeJan } from '../src/core/jan.js';
 import { calcProfit, judge, maxPurchasePrice } from '../src/core/profit.js';
-import { research } from '../src/core/research.js';
+import { research, applyManual } from '../src/core/research.js';
 import { parseKeepaProducts, createKeepaProvider } from '../src/core/providers/keepa.js';
 import { parseCatalog, parseOffers, parseFees, createSpApiProvider } from '../src/core/providers/spapi.js';
 import { createMockProvider } from '../src/core/providers/mock.js';
 import { emptyInfo } from '../src/core/providers/info.js';
-import { parseScanExport } from '../src/cli/input.js';
+import { parseScanExport, decodeText, parseCsv } from '../src/cli/input.js';
+import { createNoneProvider } from '../src/core/providers/none.js';
 import { buildResultCsv } from '../src/cli/output.js';
 
 const info = (over) => ({ ...emptyInfo('4901234567894', 'test'), found: true, ...over });
@@ -108,10 +109,11 @@ test('spapi provider: 認証 → 商品検索 → 価格 → 手数料の順に�
 
 test('入力：Expo版とPWA版のJSONを読める', () => {
   const expo = parseScanExport(JSON.stringify({ app: 'jan-scanner', format_version: 1, records: [{ jan: '4901234567894', product_name: 'お茶', store: 'A店', store_price: 98, scanned_at: '2026-10-11T01:00:00Z', scanned_at_local: '2026/10/11 10:00' }] }));
-  assert.deepEqual(expo[0], { jan: '4901234567894', purchasePrice: 98, kind: '', storeName: 'A店', productName: 'お茶', scannedAt: '2026/10/11 10:00', note: '' });
-  const pwa = parseScanExport('﻿' + JSON.stringify([{ id: 1, jan: '4901234567894', scanned_at: '2026-10-11T10:00:00+09:00', store_price: null, note: 'x', kind: 'used' }]));
-  assert.deepEqual([pwa[0].purchasePrice, pwa[0].kind, pwa[0].note], [null, 'used', 'x']);
-  assert.throws(() => parseScanExport('jan,price'), /JSON として読めません/);
+  assert.deepEqual(expo[0], { jan: '4901234567894', purchasePrice: 98, kind: '', storeName: 'A店', productName: 'お茶', scannedAt: '2026/10/11 10:00', note: '', manualSellPrice: null, manualFbaFee: null });
+  const pwa = parseScanExport('﻿' + JSON.stringify([{ id: 1, jan: '4901234567894', scanned_at: '2026-10-11T10:00:00+09:00', store_price: null, note: 'x', kind: 'used', store: 'C店' }]));
+  assert.deepEqual([pwa[0].purchasePrice, pwa[0].kind, pwa[0].note, pwa[0].storeName], [null, 'used', 'x', 'C店']);
+  assert.throws(() => parseScanExport('{ broken'), /JSON として読めません/);
+  assert.throws(() => parseScanExport('a,b'), /読めない形式/);
 });
 
 test('research → CSV：同じJANは1回だけ問い合わせ、良い順に並ぶ', async () => {
@@ -129,7 +131,7 @@ test('research → CSV：同じJANは1回だけ問い合わせ、良い順に並
   const csv = buildResultCsv(rows);
   assert.ok(csv.startsWith('﻿判定,JAN,'));
   const lines = csv.trim().split('\r\n');
-  assert.match(lines[1], /^◎,="4901234567894",/);
+  assert.match(lines[1], /^◎,="4901234567894",,"=HYPERLINK\(""https:\/\/www\.amazon\.co\.jp\/dp\/B0MOCK7894"",""Amazonで見る""\)",/);
   assert.match(lines[2], /^\?,="abc",/);
   assert.match(lines[3], /^×,/);
 });
@@ -165,4 +167,51 @@ test('spapi provider: 中古の記録があるJANは中古の価格も調べ、�
   calls.length = 0;
   await p.lookup(['4901234567894']); // 新品だけなら中古は調べない
   assert.ok(!calls.some((c) => c.endsWith('Used')));
+});
+
+test('applyManual: 手入力の価格を優先し、分からない手数料は目安で埋める', () => {
+  const none = emptyInfo('4901234567894', 'none');
+  const a = applyManual(none, { manualSellPrice: 2000, manualFbaFee: null });
+  assert.deepEqual([a.found, a.manualPrice, a.referralFeeRate, a.fbaFee, a.source], [true, 2000, 0.1, 400, '手入力']);
+  const r = calcProfit({ purchasePrice: 1000 }, a);
+  assert.deepEqual([r.sellPriceType, r.referralFee, r.fbaFee, r.profit], ['手入力', 200, 400, 400]);
+  // API の結果があっても手入力が優先。FBA手数料だけの手入力もできる
+  const k = applyManual(info({ buyBoxPrice: 3000, referralFeeRate: 0.08, fbaFee: 300, source: 'keepa' }), { manualSellPrice: 2500, manualFbaFee: 350 });
+  assert.deepEqual([k.manualPrice, k.referralFeeRate, k.fbaFee, k.source], [2500, 0.08, 350, 'keepa+手入力']);
+  assert.equal(applyManual(none, { manualSellPrice: null, manualFbaFee: null }), none);
+});
+
+test('手入力の流れ：JSON → none でCSV → Excelで書き込み → 読み直して計算', async () => {
+  const records = parseScanExport(JSON.stringify({ records: [
+    { jan: '4901234567894', product_name: 'お茶', store: 'A店', store_price: 980 },
+    { jan: '0012345678905', product_name: '本', store: 'B店', store_price: 300 },
+  ] }));
+  const first = await research(records, createNoneProvider());
+  assert.deepEqual(first.map((r) => r.verdict), ['?', '?']);
+  const csv = buildResultCsv(first);
+  assert.match(csv, /"=HYPERLINK\(""https:\/\/www\.amazon\.co\.jp\/s\?k=4901234567894"",""Amazonで見る""\)"/);
+  assert.match(csv, /keepa\.com\/#!search\/5-0012345678905/);
+
+  // Excel で「Amazon価格(手入力)」に書き込んだ状態を作る（リンクは表示の文字、JAN は数字の文字になる）
+  const [header, ...rows] = parseCsv(csv.slice(1));
+  const iJan = header.indexOf('JAN'), iPrice = header.indexOf('Amazon価格(手入力)');
+  for (const row of rows) {
+    row[iJan] = row[iJan].replace(/^=/, '');
+    row[header.indexOf('Amazon')] = 'Amazonで見る';
+    row[header.indexOf('Keepa')] = 'Keepaで見る';
+    if (row[iJan] === '4901234567894') row[iPrice] = '"2,480"';
+  }
+  const edited = [header, ...rows].map((r) => r.join(',')).join('\r\n');
+  const again = await research(parseScanExport(decodeText(Buffer.from(edited, 'utf8'))), createNoneProvider());
+  const tea = again.find((r) => r.info.jan === '4901234567894');
+  assert.deepEqual([tea.calc.sellPrice, tea.calc.referralFee, tea.calc.fbaFee, tea.calc.profit, tea.verdict], [2480, 248, 400, 852, '◎']);
+  assert.equal(tea.record.storeName, 'A店');
+  assert.equal(again.find((r) => r.info.jan === '0012345678905').verdict, '?');
+});
+
+test('decodeText: UTF-8 と Shift_JIS の両方を読める', () => {
+  assert.equal(decodeText(Buffer.from('\uFEFF判定,JAN', 'utf8')).replace(/^\uFEFF/, ''), '判定,JAN');
+  // 「判定,JAN」を Shift_JIS にしたもの
+  const sjis = Uint8Array.from([0x94, 0xbb, 0x92, 0xe8, 0x2c, 0x4a, 0x41, 0x4e]);
+  assert.equal(decodeText(sjis), '判定,JAN');
 });

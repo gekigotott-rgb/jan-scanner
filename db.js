@@ -1,4 +1,4 @@
-// IndexedDB による保存。項目: id, jan, scanned_at, store_price(任意), note(任意)
+// IndexedDB による保存。項目: id, jan, kind, store(店名), scanned_at, store_price(任意), note(任意), exported_at
 const DB = (() => {
   const NAME = 'jan-scanner', STORE = 'scans';
   let dbp;
@@ -28,7 +28,7 @@ const DB = (() => {
   }
 
   return {
-    add: (jan, kind = '') => run('readwrite', s => s.add({ jan, kind, scanned_at: new Date().toISOString(), store_price: null, note: '' })),
+    add: (rec) => run('readwrite', s => s.add({ kind: '', store: '', scanned_at: new Date().toISOString(), store_price: null, note: '', ...rec })),
     update: (rec) => run('readwrite', s => s.put(rec)),
     remove: (id) => run('readwrite', s => s.delete(id)),
     all: async () => (await run('readonly', s => s.getAll())).sort((a, b) => b.id - a.id),

@@ -17,6 +17,7 @@ export function emptyInfo(jan, source, error = null) {
     feeBasePrice: null,    // referralFee を見積もった販売価格
     referralFeeRate: null, // 販売手数料率（0.1 = 10%。Keepaのみ）
     fbaFee: null,          // FBA配送代行手数料
+    manualPrice: null,     // 手で入力した Amazon の販売価格（あればこれで計算する）
     source,
     error,
   };
