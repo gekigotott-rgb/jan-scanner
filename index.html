@@ -60,6 +60,17 @@
     <p id="empty" class="hint">まだ記録がありません。</p>
   </section>
 
+  <section id="view-compare" class="view">
+    <input type="search" id="cmp-q" placeholder="JANや商品名で探す" aria-label="探す">
+    <div class="seg" id="cmp-seg">
+      <button data-c="multi" class="on">2店以上</button>
+      <button data-c="all">全て</button>
+    </div>
+    <div id="cmp-summary" class="cmp-summary"></div>
+    <ul id="cmp-list"></ul>
+    <p id="cmp-empty" class="hint"></p>
+  </section>
+
   <section id="view-settings" class="view">
     <h2>Amazonの価格</h2>
     <p class="hint">読み取った直後に、Amazonの価格と「この値段以下なら仕入れてよい」上限を表示します。</p>
@@ -165,6 +176,7 @@
 <nav>
   <button id="tab-scan" class="tab active">スキャン</button>
   <button id="tab-list" class="tab">一覧</button>
+  <button id="tab-compare" class="tab">比較</button>
   <button id="tab-settings" class="tab">設定</button>
 </nav>
 

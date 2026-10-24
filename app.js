@@ -24,16 +24,18 @@ function notify(repeat) {
 
 // ---- 画面切り替え ----
 function show(name) {
-  ['scan', 'list', 'settings'].forEach(n => {
+  ['scan', 'list', 'compare', 'settings'].forEach(n => {
     $('view-' + n).classList.toggle('active', n === name);
     $('tab-' + n).classList.toggle('active', n === name);
   });
   if (name !== 'scan') stopScan();
   if (name === 'list') renderList();
+  if (name === 'compare') renderCompare();
   if (name === 'settings') renderSettings();
 }
 $('tab-scan').onclick = () => show('scan');
 $('tab-list').onclick = () => show('list');
+$('tab-compare').onclick = () => show('compare');
 $('tab-settings').onclick = () => show('settings');
 const isActive = (name) => $('view-' + name).classList.contains('active');
 
@@ -580,6 +582,75 @@ $('viewer-delete').onclick = async () => {
   closeViewer();
   renderList();
 };
+
+// ---- 比較（同じ商品の店ごとの価格） ----
+// 同じJAN・同じ種別（新品/中古）を1つの商品として、店ごとに一番新しい店頭価格を安い順に並べる
+let cmpMode = 'multi';
+$('cmp-seg').addEventListener('click', (e) => {
+  const c = e.target.dataset.c; if (!c) return;
+  cmpMode = c;
+  document.querySelectorAll('#cmp-seg button').forEach(b => b.classList.toggle('on', b.dataset.c === c));
+  renderCompare();
+});
+$('cmp-q').addEventListener('input', () => renderCompare());
+
+const storeLabel = (s) => esc(s || '店なし');
+
+async function renderCompare() {
+  const all = await DB.all(); // 新しい順
+  const titles = new Map(); // jan -> Amazon の商品名
+  for (const r of all) if (r.amazon?.found && r.amazon.title && !titles.has(r.jan)) titles.set(r.jan, r.amazon.title);
+  const groups = new Map();
+  for (const r of all) {
+    if (r.store_price == null) continue;
+    const key = `${r.jan}|${r.kind || ''}`;
+    if (!groups.has(key)) groups.set(key, { jan: r.jan, kind: r.kind || '', stores: new Map() });
+    const g = groups.get(key);
+    if (!g.stores.has(r.store || '')) g.stores.set(r.store || '', r); // その店の一番新しい記録
+  }
+  const list = [...groups.values()].map(g => {
+    const rows = [...g.stores.values()].sort((a, b) => a.store_price - b.store_price);
+    return { ...g, rows, min: rows[0].store_price, title: titles.get(g.jan) || '' };
+  });
+
+  // どの店が最安になることが多いか（2店以上で価格がある商品だけで数える。同じ値段なら両方に数える）
+  const wins = new Map();
+  for (const g of list) {
+    if (g.rows.length < 2) continue;
+    for (const r of g.rows) if (r.store_price === g.min) wins.set(r.store || '', (wins.get(r.store || '') || 0) + 1);
+  }
+  $('cmp-summary').innerHTML = wins.size
+    ? `<div class="hint">最安になった回数（2店以上で価格がある商品）</div><div class="wins">${[...wins].sort((a, b) => b[1] - a[1])
+      .map(([st, n]) => `<span class="win">${storeLabel(st)} <b>${n}件</b></span>`).join('')}</div>` : '';
+
+  const q = $('cmp-q').value.trim().toLowerCase();
+  const shown = list.filter(g => (cmpMode === 'all' || g.rows.length >= 2)
+    && (!q || g.jan.includes(q) || g.title.toLowerCase().includes(q)));
+  $('cmp-empty').textContent = shown.length ? ''
+    : list.length && cmpMode === 'multi' && !q ? '2つ以上の店で価格を入れた商品はまだありません。「全て」で1店だけの商品も見られます。'
+      : q ? '見つかりませんでした。' : 'まだ店頭価格を入れた記録がありません。';
+
+  const html = [];
+  for (const g of shown) {
+    const latest = all.find(r => r.jan === g.jan && (r.kind || '') === g.kind && r.amazon?.found);
+    let amz = '';
+    if (latest && Price.enabled()) {
+      const ev = await Price.evaluate({ ...latest, store_price: g.min });
+      if (ev) amz = `<div class="cmp-amz">${ev.maxPrice != null && ev.maxPrice > 0 ? `仕入れ上限 <b>${yen(ev.maxPrice)}</b>` : '仕入れ上限：なし'}${ev.calc.profit != null ? ` ・ 最安の店で買うと <span class="${VERDICT_CLASS[ev.verdict]}">${ev.verdict} 利益 ${yen(ev.calc.profit)}</span>` : ''}</div>`;
+    }
+    html.push(`<li class="cmp-item">
+      <div class="item-head"><span class="jan">${esc(g.jan)}${kindTag(g.kind)}</span><span class="time">${g.rows.length}店</span></div>
+      ${g.title ? `<div class="cmp-title">${esc(g.title)}</div>` : ''}
+      <table class="cmp-table">${g.rows.map(r => `<tr class="${r.store_price === g.min ? 'best' : ''}">
+        <td>${storeLabel(r.store)}</td>
+        <td class="num">${yen(r.store_price)}</td>
+        <td class="diff">${r.store_price === g.min ? (g.rows.length > 1 ? '最安' : '') : `+${yen(r.store_price - g.min)}`}</td>
+        <td class="date">${fmtTime(r.scanned_at)}</td></tr>`).join('')}</table>
+      ${amz}
+    </li>`);
+  }
+  $('cmp-list').innerHTML = html.join('');
+}
 
 // ---- 書き出し（共有シート。使えなければダウンロード） ----
 // 書き出しは日本時間(JST, UTC+9)。端末内の保存値はUTCのまま
