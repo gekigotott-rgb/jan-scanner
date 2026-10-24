@@ -118,6 +118,8 @@ async function onScanned(jan) {
   if (busy) return;
   if (/^19[12]/.test(jan)) return; // 本の2段目のバーコード（値段と分類のコード）は商品のコードではない
   busy = true;
+  // 読んだ瞬間の映像を1枚撮っておく（値札のバーコードを読めば値札が写る）。価格なしで登録したときだけ残す
+  const snap = priceMode ? grabFrame() : null;
   try {
     const all = await DB.all();
     const before = all.filter(r => r.jan === jan); // 新しい順（今回の分を含まない）
@@ -134,7 +136,7 @@ async function onScanned(jan) {
       : `<div class="tag">新規</div>`) };
     await renderLast();
     if (Price.enabled()) fetchAmazon(id);
-    if (priceMode) openPanel(id, rec, before, all);
+    if (priceMode) { openPanel(id, rec, before, all); if (snap) setPendingPhoto(snap); }
     else busy = false;
   } catch (e) { busy = false; }
 }
@@ -181,6 +183,7 @@ function openPanel(id, rec, before, all) {
   priceBasis = all.find(r => (r.store || '') === rec.store && r.price_basis)?.price_basis ?? TAX_INCLUDED;
   syncTaxSeg();
   $('p-thumb').hidden = true; $('p-thumb').removeAttribute('src');
+  $('p-photo-note').textContent = '';
   $('p-photo').textContent = '📷 値札を撮る';
   $('p-jan').innerHTML = `${rec.jan}${kindTag(rec.kind)}`;
   $('p-sub').className = 'p-sub' + (before.length ? ' repeat' : '');
@@ -243,7 +246,7 @@ $('keypad').addEventListener('click', (e) => {
 async function submitPanel(price) {
   if (!pending) return;
   const rec = await getRec(pending.id);
-  const photo = pending.photo;
+  const photo = price == null ? pending.photo : null; // 価格を入れたら写真は要らないので捨てる
   if (rec) {
     if (price != null) Object.assign(rec, { store_price: price, tax_rate: taxRate, price_basis: priceBasis, entered_price: Number(digits) });
     if (photo) { await DB.putPhoto(rec.id, photo); photoCache.set(rec.id, photo); rec.photo = true; }
@@ -285,10 +288,17 @@ $('photo-file').addEventListener('change', async () => {
   try { resolve(await fileToJpeg(file)); } catch (e) { alert(e.message); }
 });
 
+// スキャン中のカメラの映像を JPEG にする。映像がなければ null
+function grabFrame() {
+  const v = $('video');
+  try { return v.videoWidth ? toJpeg(v, v.videoWidth, v.videoHeight) : null; } catch (e) { return null; }
+}
+
 function setPendingPhoto(data) {
   if (!pending) return;
   pending.photo = data;
   $('p-thumb').src = data; $('p-thumb').hidden = false;
+  $('p-photo-note').textContent = '価格なしで登録すると、この写真を残します';
   $('p-photo').textContent = '📷 撮り直す';
 }
 // スキャン中はカメラの映像からそのまま撮る（カメラを切り替えずに済む）。止まっていればカメラを開く
