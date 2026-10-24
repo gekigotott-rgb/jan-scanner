@@ -54,6 +54,7 @@
       <button data-filter="all" class="on">全て</button>
       <button data-filter="new">新品</button>
       <button data-filter="used">中古</button>
+      <button data-filter="noprice">価格未入力</button>
     </div>
     <ul id="list"></ul>
     <p id="empty" class="hint">まだ記録がありません。</p>
@@ -98,6 +99,10 @@
       <button id="p-cancel">やめる</button>
     </div>
     <div id="p-hist" class="hist"></div>
+    <div class="photo-row">
+      <button id="p-photo">📷 値札を撮る</button>
+      <img id="p-thumb" class="thumb" alt="値札の写真" hidden>
+    </div>
     <div id="p-amz"></div>
     <div class="tax-row">
       <div class="seg" id="p-rate">
@@ -122,6 +127,39 @@
     </div>
   </div>
 </div>
+
+<!-- 値札を撮るとき：パネルを隠してカメラの映像を見せ、下に「撮る」を出す -->
+<div id="shoot" class="shoot" hidden>
+  <p>値札を枠に入れて「撮る」を押してください</p>
+  <div class="row">
+    <button id="shoot-cancel">戻る</button>
+    <button id="shoot-btn" class="primary">撮る</button>
+  </div>
+</div>
+
+<!-- 値札の写真を大きく見る。見ながら店頭価格を入れられる -->
+<div id="viewer" class="viewer" hidden>
+  <img id="viewer-img" alt="値札の写真">
+  <div class="viewer-body">
+    <div class="viewer-price">
+      <input type="number" inputmode="numeric" min="0" id="viewer-price" placeholder="店頭価格(円)">
+      <select id="viewer-basis" aria-label="税込・税別">
+        <option value="in">税込</option>
+        <option value="ex10">税別 10%</option>
+        <option value="ex8">税別 8%</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="viewer-close">閉じる</button>
+      <button id="viewer-save" class="primary">価格を保存</button>
+    </div>
+    <div class="row">
+      <button id="viewer-retake">撮り直す</button>
+      <button id="viewer-delete" class="danger">写真を消す</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="photo-file" accept="image/*" capture="environment" hidden>
 
 <nav>
   <button id="tab-scan" class="tab active">スキャン</button>

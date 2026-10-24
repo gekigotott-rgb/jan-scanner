@@ -180,6 +180,8 @@ function openPanel(id, rec, before, all) {
   taxRate = all.find(r => r.jan === rec.jan && r.tax_rate)?.tax_rate ?? 10;
   priceBasis = all.find(r => (r.store || '') === rec.store && r.price_basis)?.price_basis ?? TAX_INCLUDED;
   syncTaxSeg();
+  $('p-thumb').hidden = true; $('p-thumb').removeAttribute('src');
+  $('p-photo').textContent = '📷 値札を撮る';
   $('p-jan').innerHTML = `${rec.jan}${kindTag(rec.kind)}`;
   $('p-sub').className = 'p-sub' + (before.length ? ' repeat' : '');
   $('p-sub').textContent = (before.length ? `⚠ ${before.length + 1}回目（前回 ${fmtTime(before[0].scanned_at)}）` : '新規')
@@ -241,15 +243,72 @@ $('keypad').addEventListener('click', (e) => {
 async function submitPanel(price) {
   if (!pending) return;
   const rec = await getRec(pending.id);
-  if (rec && price != null) {
-    Object.assign(rec, { store_price: price, tax_rate: taxRate, price_basis: priceBasis, entered_price: Number(digits) });
-    await DB.update(rec);
+  const photo = pending.photo;
+  if (rec) {
+    if (price != null) Object.assign(rec, { store_price: price, tax_rate: taxRate, price_basis: priceBasis, entered_price: Number(digits) });
+    if (photo) { await DB.putPhoto(rec.id, photo); photoCache.set(rec.id, photo); rec.photo = true; }
+    if (price != null || photo) await DB.update(rec);
   }
   closePanel();
   renderLast();
 }
 $('p-ok').onclick = () => submitPanel(panelPrice());
 $('p-skip').onclick = () => submitPanel(null);
+// ---- 値札の写真 ----
+// 長辺 1280px・JPEG に縮めて保存する（1枚 100KB 前後）
+const PHOTO_MAX = 1280, PHOTO_QUALITY = 0.7;
+const photoCache = new Map(); // id -> data URL
+function toJpeg(source, w, h) {
+  const scale = Math.min(1, PHOTO_MAX / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+  c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', PHOTO_QUALITY);
+}
+function fileToJpeg(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(toJpeg(img, img.naturalWidth, img.naturalHeight)); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読めませんでした')); };
+    img.src = url;
+  });
+}
+// iPhone のカメラ（または写真の選択）を開いて1枚もらう。やめたときは何も返らない
+let fileResolve = null;
+function pickPhoto() {
+  return new Promise((resolve) => { fileResolve = resolve; $('photo-file').value = ''; $('photo-file').click(); });
+}
+$('photo-file').addEventListener('change', async () => {
+  const file = $('photo-file').files[0], resolve = fileResolve;
+  fileResolve = null;
+  if (!file || !resolve) return;
+  try { resolve(await fileToJpeg(file)); } catch (e) { alert(e.message); }
+});
+
+function setPendingPhoto(data) {
+  if (!pending) return;
+  pending.photo = data;
+  $('p-thumb').src = data; $('p-thumb').hidden = false;
+  $('p-photo').textContent = '📷 撮り直す';
+}
+// スキャン中はカメラの映像からそのまま撮る（カメラを切り替えずに済む）。止まっていればカメラを開く
+$('p-photo').onclick = async () => {
+  const v = $('video');
+  if (Scanner.isRunning() && v.videoWidth) {
+    $('panel').hidden = true;
+    $('shoot').hidden = false;
+    window.scrollTo(0, 0);
+  } else setPendingPhoto(await pickPhoto());
+};
+function exitShoot() { $('shoot').hidden = true; if (pending) $('panel').hidden = false; }
+$('shoot-btn').onclick = async () => {
+  const v = $('video');
+  if (v.videoWidth) setPendingPhoto(toJpeg(v, v.videoWidth, v.videoHeight));
+  else { exitShoot(); setPendingPhoto(await pickPhoto()); return; }
+  exitShoot();
+};
+$('shoot-cancel').onclick = exitShoot;
+
 // 読み間違いなど。保存しておいた記録を消す
 $('p-cancel').onclick = async () => {
   if (!pending) return;
@@ -391,7 +450,9 @@ let listRendering = Promise.resolve();
 function renderList() { listRendering = listRendering.then(renderListNow, renderListNow); return listRendering; }
 async function renderListNow() {
   const allRows = await DB.all();
-  const rows = listFilter === 'all' ? allRows : allRows.filter(r => r.kind === listFilter);
+  const rows = listFilter === 'all' ? allRows
+    : listFilter === 'noprice' ? allRows.filter(r => r.store_price == null)
+      : allRows.filter(r => r.kind === listFilter);
   const kinds = new Set(rows.map(r => r.jan)).size;
   const times = {};
   allRows.forEach(r => { times[r.jan] = (times[r.jan] || 0) + 1; }); // ×N は新品・中古をまたいだ回数
@@ -415,6 +476,8 @@ async function renderListNow() {
       <div class="item-head"><span class="jan">${esc(r.jan)}${kindTag(r.kind)}${times[r.jan] > 1 ? `<span class="badge">×${times[r.jan]}</span>` : ''}</span><span class="time">${fmtTime(r.scanned_at)}${r.exported_at ? ' ・ 書き出し済み' : ''}</span></div>
       ${alertHtml}
       ${amz[i]}
+      ${r.photo ? `<div class="photo-line"><img class="thumb" data-photo="${r.id}" alt="値札の写真"><span class="hint">写真をタップすると大きく見られます</span></div>`
+        : r.store_price == null ? `<div class="photo-line"><button data-photo-add="${r.id}">📷 値札の写真を追加</button></div>` : ''}
       <div class="fields">
         <input type="number" inputmode="numeric" min="0" placeholder="店頭価格(円)" data-f="store_price" value="${r.store_price ?? ''}">
         <input type="text" placeholder="メモ" data-f="note" value="${esc(r.note)}">
@@ -433,6 +496,12 @@ async function renderListNow() {
       </div>
     </li>`;
   }).join('');
+  // 写真は後から読み込む（一覧を先に出すため）
+  for (const img of $('list').querySelectorAll('img[data-photo]')) {
+    const id = Number(img.dataset.photo);
+    if (!photoCache.has(id)) photoCache.set(id, await DB.getPhoto(id));
+    if (photoCache.get(id)) img.src = photoCache.get(id);
+  }
 }
 
 $('list').addEventListener('change', async (e) => {
@@ -448,11 +517,59 @@ $('list').addEventListener('change', async (e) => {
   if (f === 'kind' && Price.enabled() && needsFetch(rec)) fetchAmazon(id);
 });
 $('list').addEventListener('click', async (e) => {
+  if (e.target.dataset.photo) return openViewer(Number(e.target.dataset.photo));
+  if (e.target.dataset.photoAdd) return attachPhoto(Number(e.target.dataset.photoAdd));
   if (!e.target.dataset.del) return;
   if (!confirm('この記録を削除しますか？')) return;
   await DB.remove(Number(e.target.closest('li').dataset.id));
   renderList();
 });
+
+// ---- 写真を大きく見る（見ながら店頭価格を入れる） ----
+let viewing = null;
+async function attachPhoto(id) {
+  const data = await pickPhoto();
+  await DB.putPhoto(id, data);
+  photoCache.set(id, data);
+  const rec = await getRec(id);
+  if (rec) { rec.photo = true; await DB.update(rec); }
+  renderList();
+}
+async function openViewer(id) {
+  const rec = await getRec(id); if (!rec) return;
+  viewing = id;
+  $('viewer-img').src = photoCache.get(id) || await DB.getPhoto(id) || '';
+  $('viewer-price').value = rec.price_basis === TAX_EXCLUDED ? rec.entered_price ?? '' : rec.store_price ?? '';
+  $('viewer-basis').value = rec.price_basis === TAX_EXCLUDED ? (rec.tax_rate === 8 ? 'ex8' : 'ex10') : 'in';
+  $('viewer').hidden = false;
+}
+function closeViewer() { $('viewer').hidden = true; viewing = null; }
+$('viewer-close').onclick = closeViewer;
+$('viewer-save').onclick = async () => {
+  const rec = await getRec(viewing); if (!rec) return closeViewer();
+  const v = $('viewer-price').value, basis = $('viewer-basis').value;
+  if (v === '') setPlainPrice(rec, null);
+  else if (basis === 'in') setPlainPrice(rec, Number(v));
+  else {
+    const rate = basis === 'ex8' ? 8 : 10;
+    Object.assign(rec, { store_price: withTax(Number(v), rate), tax_rate: rate, price_basis: TAX_EXCLUDED, entered_price: Number(v) });
+  }
+  rec.exported_at = null;
+  await DB.update(rec);
+  closeViewer();
+  renderList();
+};
+$('viewer-retake').onclick = async () => { const id = viewing; closeViewer(); await attachPhoto(id); };
+$('viewer-delete').onclick = async () => {
+  if (!confirm('この写真を消しますか？（記録は残ります）')) return;
+  const id = viewing;
+  await DB.removePhoto(id);
+  photoCache.delete(id);
+  const rec = await getRec(id);
+  if (rec) { rec.photo = false; await DB.update(rec); }
+  closeViewer();
+  renderList();
+};
 
 // ---- 書き出し（共有シート。使えなければダウンロード） ----
 // 書き出しは日本時間(JST, UTC+9)。端末内の保存値はUTCのまま
