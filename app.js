@@ -143,6 +143,27 @@ async function onScanned(jan) {
 let pending = null; // { id, rec, hist }
 let digits = '';
 
+// ---- 税率と税込/税別。店頭価格はいつも税込で保存し、税別で打ったときは元の金額と税率も残す ----
+const TAX_INCLUDED = 'tax_included', TAX_EXCLUDED = 'tax_excluded';
+let taxRate = 10, priceBasis = TAX_INCLUDED;
+// 税別の金額を税込にする（1円未満は切り捨て）
+const withTax = (amount, rate) => Math.floor(amount * (100 + rate) / 100);
+// パネルで打った金額を税込にしたもの。未入力なら null
+const panelPrice = () => (digits ? (priceBasis === TAX_EXCLUDED ? withTax(Number(digits), taxRate) : Number(digits)) : null);
+function syncTaxSeg() {
+  document.querySelectorAll('#p-rate button').forEach(b => b.classList.toggle('on', Number(b.dataset.rate) === taxRate));
+  document.querySelectorAll('#p-basis button').forEach(b => b.classList.toggle('on', b.dataset.basis === priceBasis));
+}
+$('p-rate').addEventListener('click', (e) => { if (!e.target.dataset.rate) return; taxRate = Number(e.target.dataset.rate); syncTaxSeg(); renderPrice(); });
+$('p-basis').addEventListener('click', (e) => { if (!e.target.dataset.basis) return; priceBasis = e.target.dataset.basis; syncTaxSeg(); renderPrice(); });
+// 一覧などで価格を直接直したときは、税別で打った情報を消す（税込の金額として扱う）
+function setPlainPrice(rec, price) {
+  rec.store_price = price;
+  rec.price_basis = price == null ? null : TAX_INCLUDED;
+  rec.entered_price = price;
+}
+const taxNote = (r) => (r.price_basis === TAX_EXCLUDED && r.entered_price != null ? `税別${yen(r.entered_price)}・${r.tax_rate}%` : '');
+
 // 同じJAN・同じ種別の過去の価格（この店の前回／ほかの店の最安）
 function priceHistory(all, rec) {
   const same = all.filter(r => r.jan === rec.jan && (r.kind || '') === (rec.kind || '') && r.store_price != null);
@@ -155,6 +176,10 @@ function priceHistory(all, rec) {
 function openPanel(id, rec, before, all) {
   pending = { id, rec, hist: priceHistory(all, rec) };
   digits = '';
+  // 税率は「その商品で前回選んだもの」、税込/税別は「その店で前回選んだもの」（店によって値札の書き方が違うため）
+  taxRate = all.find(r => r.jan === rec.jan && r.tax_rate)?.tax_rate ?? 10;
+  priceBasis = all.find(r => (r.store || '') === rec.store && r.price_basis)?.price_basis ?? TAX_INCLUDED;
+  syncTaxSeg();
   $('p-jan').innerHTML = `${rec.jan}${kindTag(rec.kind)}`;
   $('p-sub').className = 'p-sub' + (before.length ? ' repeat' : '');
   $('p-sub').textContent = (before.length ? `⚠ ${before.length + 1}回目（前回 ${fmtTime(before[0].scanned_at)}）` : '新規')
@@ -170,7 +195,8 @@ function openPanel(id, rec, before, all) {
 }
 
 function renderPrice() {
-  const price = digits ? Number(digits) : null;
+  const price = panelPrice();
+  $('p-entered').textContent = price != null && priceBasis === TAX_EXCLUDED ? `税別 ${yen(Number(digits))} ＋ 消費税${taxRate}%（税込で登録）` : '';
   $('p-price').textContent = price != null ? yen(price) : '価格を入力';
   $('p-price').classList.toggle('empty', price == null);
   $('p-ok').disabled = !price;
@@ -193,11 +219,11 @@ function renderPrice() {
 // パネルにも Amazon の情報（仕入れ上限・打ち込んだ価格での利益）を出す
 async function renderPanelAmz() {
   if (!pending || !Price.enabled()) return;
-  const { id } = pending, typed = digits;
+  const { id } = pending, typed = panelPrice();
   const rec = await getRec(id);
   if (!rec) return;
-  const html = await amazonHtml({ ...rec, store_price: typed ? Number(typed) : null });
-  if (pending && pending.id === id && digits === typed) $('p-amz').innerHTML = html;
+  const html = await amazonHtml({ ...rec, store_price: typed });
+  if (pending && pending.id === id && panelPrice() === typed) $('p-amz').innerHTML = html;
 }
 
 function closePanel() {
@@ -215,11 +241,14 @@ $('keypad').addEventListener('click', (e) => {
 async function submitPanel(price) {
   if (!pending) return;
   const rec = await getRec(pending.id);
-  if (rec && price != null) { rec.store_price = price; await DB.update(rec); }
+  if (rec && price != null) {
+    Object.assign(rec, { store_price: price, tax_rate: taxRate, price_basis: priceBasis, entered_price: Number(digits) });
+    await DB.update(rec);
+  }
   closePanel();
   renderLast();
 }
-$('p-ok').onclick = () => submitPanel(digits ? Number(digits) : null);
+$('p-ok').onclick = () => submitPanel(panelPrice());
 $('p-skip').onclick = () => submitPanel(null);
 // 読み間違いなど。保存しておいた記録を消す
 $('p-cancel').onclick = async () => {
@@ -248,7 +277,7 @@ async function renderLast() {
 $('last').addEventListener('change', async (e) => {
   if (e.target.id !== 'last-price' || !lastScan) return;
   const rec = await getRec(lastScan.id); if (!rec) return;
-  rec.store_price = e.target.value === '' ? null : Number(e.target.value);
+  setPlainPrice(rec, e.target.value === '' ? null : Number(e.target.value));
   rec.exported_at = null;
   await DB.update(rec);
   e.target.blur();
@@ -390,6 +419,7 @@ async function renderListNow() {
         <input type="number" inputmode="numeric" min="0" placeholder="店頭価格(円)" data-f="store_price" value="${r.store_price ?? ''}">
         <input type="text" placeholder="メモ" data-f="note" value="${esc(r.note)}">
       </div>
+      ${taxNote(r) ? `<p class="hint tax-note">${taxNote(r)}で入力（税込で保存）</p>` : ''}
       <div class="item-foot">
         <span class="selects">
         <select data-f="store">${storeOptions(r.store)}</select>
@@ -409,7 +439,8 @@ $('list').addEventListener('change', async (e) => {
   const f = e.target.dataset.f; if (!f) return;
   const id = Number(e.target.closest('li').dataset.id);
   const rec = (await DB.all()).find(r => r.id === id); if (!rec) return;
-  rec[f] = f === 'store_price' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value;
+  if (f === 'store_price') setPlainPrice(rec, e.target.value === '' ? null : Number(e.target.value));
+  else rec[f] = e.target.value;
   rec.exported_at = null; // 書き出し後に価格やメモを直したら、次の書き出しに入れ直す
   await DB.update(rec);
   e.target.blur();
@@ -443,9 +474,9 @@ async function buildExport(kind, rows, now = new Date()) {
     const a = r.amazon && r.amazon.found ? r.amazon : null;
     const ev = a ? await Price.evaluate(r) : null;
     lines.push([r.id, q(r.jan), toJst(r.scanned_at).slice(0, 19).replace('T', ' '), r.store_price ?? '', q(r.note), KIND_LABEL[r.kind] || '',
-      q(a?.title), ev?.calc.sellPrice ?? '', ev?.maxPrice ?? '', ev?.calc.profit ?? '', a ? ev.verdict : '', q(a?.asin), a?.salesRank ?? '', q(r.store)].join(','));
+      q(a?.title), ev?.calc.sellPrice ?? '', ev?.maxPrice ?? '', ev?.calc.profit ?? '', a ? ev.verdict : '', q(a?.asin), a?.salesRank ?? '', q(r.store), r.tax_rate ?? '', r.price_basis ?? '', r.entered_price ?? ''].join(','));
   }
-  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note,kind,amazon_title,amazon_sell_price,max_purchase_price,profit,verdict,asin,sales_rank,store',
+  const body = '﻿' + ['id,jan,scanned_at_jst,store_price,note,kind,amazon_title,amazon_sell_price,max_purchase_price,profit,verdict,asin,sales_rank,store,tax_rate,price_basis,entered_price',
     ...lines].join('\r\n');
   return { body, type: 'text/csv', name: `jan-scan_${stamp}.csv` };
 }

@@ -88,7 +88,7 @@ button:disabled { opacity:.4; }
 /* 価格入力パネル（画面の下から出る） */
 .sheet { position:fixed; inset:0; z-index:10; display:flex; align-items:flex-end; background:rgba(0,0,0,.55); }
 .sheet[hidden] { display:none; }
-.sheet-body { width:100%; background:var(--card); border-radius:16px 16px 0 0; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); }
+.sheet-body { width:100%; max-height:100%; overflow-y:auto; background:var(--card); border-radius:16px 16px 0 0; padding:14px 16px calc(14px + env(safe-area-inset-bottom)); }
 .sheet-head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
 .sheet-head .jan { font-size:20px; font-weight:600; letter-spacing:1px; }
 .p-sub { margin-top:2px; font-size:13px; color:var(--ok); font-weight:600; }
@@ -104,3 +104,10 @@ button:disabled { opacity:.4; }
 .keypad button { padding:14px 0; font-size:22px; background:#2c2c2e; }
 .sheet .row button { flex:1; padding:14px; }
 .sheet .row button.primary { width:auto; }
+
+/* 税率・税込/税別の切り替え（価格入力パネル） */
+.tax-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+.tax-row .seg { margin:0; }
+.tax-row .seg button { padding:8px 0; font-size:15px; }
+.entered { min-height:18px; font-size:13px; color:var(--sub); text-align:right; }
+.tax-note { margin:6px 0 0; }
