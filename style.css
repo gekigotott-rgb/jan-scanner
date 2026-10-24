@@ -28,7 +28,7 @@ button.primary { background:var(--accent); border-color:var(--accent); width:100
 button.danger { color:#ff453a; }
 nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:#0b0b0c; border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom); }
-.tab { flex:1; border:0; border-radius:0; background:transparent; padding:16px; color:var(--sub); }
+.tab { flex:1; border:0; border-radius:0; background:transparent; padding:16px 4px; color:var(--sub); white-space:nowrap; }
 .tab.active { color:var(--accent); font-weight:600; }
 ul { list-style:none; margin:0; padding:0; }
 li { background:var(--card); border-radius:12px; padding:12px; margin-bottom:10px; }
@@ -135,3 +135,23 @@ button:disabled { opacity:.4; }
 .viewer .row button.primary { width:auto; }
 #filter-seg button { font-size:14px; }
 .photo-row .hint { font-size:12px; line-height:1.4; }
+
+/* 比較タブ */
+#cmp-q { margin-bottom:10px; }
+.cmp-summary { margin-bottom:10px; }
+.cmp-summary .wins { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+.cmp-summary .win { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 10px; font-size:14px; }
+.cmp-summary .win b { color:var(--ok); }
+.cmp-title { margin-top:4px; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cmp-table { width:100%; border-collapse:collapse; margin-top:6px; font-size:15px; }
+.cmp-table td { padding:6px 4px; border-top:1px solid var(--line); }
+.cmp-table td.num { text-align:right; font-weight:600; white-space:nowrap; }
+.cmp-table td.diff { text-align:right; color:var(--warn); font-size:13px; white-space:nowrap; }
+.cmp-table td.date { text-align:right; color:var(--sub); font-size:12px; white-space:nowrap; }
+.cmp-table tr.best td { color:var(--ok); }
+.cmp-table tr.best td.diff { font-weight:600; }
+.cmp-amz { margin-top:6px; font-size:14px; color:var(--sub); }
+.cmp-amz b { color:var(--ok); }
+.cmp-amz .good { color:var(--ok); font-weight:600; }
+.cmp-amz .mid { color:var(--warn); font-weight:600; }
+.cmp-amz .bad { color:#ff453a; font-weight:600; }
